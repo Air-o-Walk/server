@@ -1,34 +1,38 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('./config/database');
+const nodemailer = require('nodemailer');
+const { bienvenida } = require('./config/correo.js');
 
 /**
  * 1. registerUser(username, email, password, townHallId)
+ * Hecho por Maria Algora
  * Registra un nuevo usuario en el sistema
- * 
  * username, email, password, townHallId ---> registerUser() ---> {success, message} || error "Usuario o email ya existe"
  */
-async function registerUser(username, email, password, townHallId) {
+async function registerUser(email) {
     try {
-		
-		/* Al colocar las variable en corchetes extrae solamente lo primero que se encuentre en el array de
-			respuesta de MySQL, evitando tener que hacer la descontruccion despues
-		*/
-		
-		// Verificar si el usuario o email ya existen
-        const [existingUsers] = await db.query(
-            'SELECT * FROM users WHERE email = ? OR username = ?',
-            [email, username]
+
+        /* Al colocar las variable en corchetes extrae solamente lo primero que se encuentre en el array de
+            respuesta de MySQL, evitando tener que hacer la descontruccion despues
+        */
+
+        //1) Obtener la aplicación más reciente por email
+        const [apps] = await db.query(
+            'SELECT id, first_name, last_name, email, dni, townhall_id FROM applications WHERE email = ? ORDER BY id DESC LIMIT 1',
+            [email]
         );
 
-        if (existingUsers.length > 0) {
-            return {
-                success: false,
-                message: 'Error: Usuario o email ya existe'
-            };
-        }
+        if (apps.length === 0) return { success: false, message: 'Solicitud no encontrada para ese email' };
 
-        // Buscar el rol por defecto "citizen"
+        const app = apps[0];
+        const applicationId = app.id;
+        const firstName = app.first_name;
+        const lastName = app.last_name;
+        let dni = app.dni;
+        const townHallId = app.townhall_id;
+
+        //2) Buscar el rol por defecto
         const [roles] = await db.query(
             'SELECT id FROM roles WHERE name = ?',
             ['walker']
@@ -37,21 +41,55 @@ async function registerUser(username, email, password, townHallId) {
         if (roles.length === 0) {
             return {
                 success: false,
-                message: 'Error: Rol citizen no encontrado'
+                message: 'Error: Rol no encontrado'
             };
         }
 
         const roleId = roles[0].id;
 
-        // Cifrar la contraseña
-        const hashedPassword = await bcrypt.hash(password, 10);
+
+        //3) Cifrar la contraseña
+        const rawPassword = dni.slice(0, -1); //Quito la letra
+        const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+        //4) Crear nombre usuario con la inicial del nombre y las primeras letras del apellido/s
+        const preparar = s =>
+            s.normalize('NFD')                   // Separa letras de acentos
+                .replace(/[\u0300-\u036f]/g, '')      // Elimina los acentos
+                .replace(/[^a-zA-Z]/g, '')            // Elimina cualquier cosa que no sea una letra
+                .toLowerCase();                      // Convierte todo a minúsculas
+
+        const crearUsername = (firstName, lastName) => {
+            const inicialesNombre = firstName.split(/\s+/).map(p => p[0]).join(''); //Separa nombres en array, toma primera letra y los junta (si hubiera más de uno)
+            const apellidos = lastName.split(/\s+/); // Poner apellidos en array cuando haya un spacio '\s' o más '+'
+            const inicialesApellido = apellidos.length === 1 ? apellidos[0].slice(0, 4) : apellidos[0].slice(0, 3) + apellidos[1][0]; // 1 aprllido -> tomo 4 letras; 2 apellidos -> tomo 3 y 1 letras
+            return `${preparar(iniciales)}.${preparar(inicialesApellido)}`;
+        };
+
+        let username = crearUsername(firstName, lastName);
+
 
         // Crear el nuevo usuario
-        await db.query(
+        const [nuevoUsuario] = await db.query(
             `INSERT INTO users (username, email, password, role_id, points, active_hours, total_distance, town_hall_id) 
              VALUES (?, ?, ?, ?, 0, 0, 0, ?)`,
             [username, email, hashedPassword, roleId, townHallId]
         );
+
+        if (nuevoUsuario.affectedRows !== 1) {
+            return { success: false, message: 'Error al insertar usuario' };
+        }
+
+        //Enviar correo
+        await sendMail({
+            to: email,
+            firstName,
+            username,
+            rawPassword
+        });
+
+        //Borro formulario
+        await deleteApplication(applicationId);
 
         return {
             success: true,
@@ -250,7 +288,7 @@ async function updateUserActivity(userId, time, distance) {
         // Calcular nuevos valores
         const newActiveHours = user.active_hours + time;
         const newTotalDistance = user.total_distance + distance;
-		
+
 
         // Actualizar la base de datos
         await db.query(
@@ -275,6 +313,118 @@ async function updateUserActivity(userId, time, distance) {
         };
     }
 }
+/*
+*6. getAyuntamientos
+*Hecho por Maria Algora
+*Devuelve id y nombre del ayuntamiento
+* ---> getAyuntamientos() ---> { success: true, data: [ {id, name}, ... ] } || { success: false, message }
+*/
+async function getAyuntamientos() {
+    try {
+        const [ayt] = await db.query(
+            `SELECT id, name
+       FROM town_halls
+       ORDER BY name ASC`
+        );
+
+        //Creo un array de objetos
+        const data = Array.isArray(ayt)
+            ? ayt.map(r => ({ id: String(r.id), name: r.name }))
+            : [];
+
+        return {
+            success: true,
+            data
+        };
+
+    } catch (error) {
+        console.error('Error en getAyuntamientos:', error);
+        return {
+            success: false,
+            message: 'Error al obtener los ayuntamientos'
+        };
+    }
+}
+
+/* 7. apply
+*Hecho por Maria Algora
+*Guarda solicitud en applications
+* firstName, lastName, email, dni, phone, townHallId -> apply ->
+*/
+async function apply(firstName, lastName, email, dni, phone, townHallId) {
+    try {
+        // Validaciones básicas
+        if (!firstName || !lastName || !email || !dni || !phone || !townHallId) {
+            return { success: false, message: 'Faltan campos obligatorios' };
+        }
+
+        // Comprobar si el email ya existe
+        const [existingByEmail] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
+        if (existingByEmail.length > 0) {
+            return { success: false, message: 'Email ya registrado' };
+        }
+
+        // Insertar usuario
+        const [result] = await db.query(
+            `INSERT INTO applications (email, dni, first_name, last_name, townhall_id)
+   VALUES (?, ?, ?, ?, ?)`,
+            [email, dni, firstName, lastName, townHallId]
+        );
+
+        if (result.affectedRows === 1) {
+            return {
+                success: true,
+                message: 'Solicitud insertada'
+            };
+        } else {
+            return {
+                success: false,
+                message: 'Error al insertar solicitud'
+            };
+        }
+    } catch (error) {
+        console.error('Error en apply:', error);
+        return {
+            success: false,
+            message: 'Error en apply'
+        };
+    }
+}
+/* 8. deleteApplication
+ * Hecho por Maria Algora
+ * Elimina una solicitud de applications por id.
+ * applicationId -> deleteapplication ->
+ */
+async function deleteApplication(applicationId) {
+    try {
+        const [result] = await db.query(
+            'DELETE FROM applications WHERE id = ?',
+            [applicationId]
+        );
+        return result.affectedRows === 1;
+    } catch (error) {
+        console.error('Error borrando application:', error);
+        return false;
+    }
+}
+
+/* 9. sendMail
+ * Hecho por Maria Algora
+ * Envía correo de bienvenida usando la función `bienvenida` de config/correo.js
+ * to, firstName, username, rawPassword -> sendEmail ->
+ */
+async function sendMail({ to, firstName, username, rawPassword }) {
+    try {
+        await bienvenida({
+            to,
+            firstName,
+            username,
+            rawPassword
+        });
+    } catch (error) {
+        console.error('Error enviando email:', error);
+    }
+}
 
 // Exportar todas las funciones
 module.exports = {
@@ -282,5 +432,9 @@ module.exports = {
     loginUser,
     getUser,
     linkNodeToUser,
-    updateUserActivity
+    updateUserActivity,
+    getAyuntamientos,
+    apply,
+    deleteApplication,
+    sendMail
 };

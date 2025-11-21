@@ -21,7 +21,10 @@ app.get('/', (req, res) => {
             'POST /login': 'Iniciar sesión',
             'GET /user/:userId': 'Obtener información de usuario',
             'POST /node/link': 'Vincular nodo a usuario',
-            'PUT /user/activity': 'Actualizar actividad de usuario'
+            'PUT /user/activity': 'Actualizar actividad de usuario',
+            'GET /getAyuntamientos': 'Lista de ayuntamientos',
+            'POST /apply': 'Crear solicitud',
+            'DELETE /application/:applicationId': 'Borra solicitud'
         }
     });
 });
@@ -29,21 +32,20 @@ app.get('/', (req, res) => {
 /**
  * POST /register
  * Registrar un nuevo usuario
- * Body: { username, email, password, townHallId }
+ * Body: {}
  */
 app.post('/register', async (req, res) => {
     try {
-        const { username, email, password, townHallId } = req.body;
+        const { email } = req.body;
 
-        // Validar que todos los campos estén presentes
-        if (!username || !email || !password || !townHallId) {
+        if (!email) {
             return res.status(400).json({
                 success: false,
-                message: 'Faltan campos obligatorios: username, email, password, townHallId'
+                message: 'Faltan campos obligatorios: email'
             });
         }
 
-        const resultado = await logica.registerUser(username, email, password, townHallId);
+        const resultado = await logica.registerUser(email);
 
         if (resultado.success) {
             res.status(201).json(resultado);
@@ -185,6 +187,93 @@ app.put('/user/activity', async (req, res) => {
             success: false,
             message: 'Error interno del servidor'
         });
+    }
+});
+
+/**
+ * GET /getAyuntamientos
+ * Hecho por Maria Algora
+ * Obtener ayuntamientos
+ * Body: id, name
+ */
+app.get('/getAyuntamientos', async (req, res) => {
+    try {
+        const resultado = await logica.getAyuntamientos();
+
+        if (resultado.success) {
+            res.status(200).json({
+                success: true,
+                data: resultado.data
+            });
+        } else {
+            // Si no se encuentran ayuntamientos o hay error en la lógica
+            res.status(404).json({
+                success: false,
+                message: resultado.message // Usar el mensaje de la lógica
+            });
+        }
+    } catch (error) {
+        console.error('Error en /getAyuntamientos:', error);
+        // Solo para errores inesperados del servidor
+        res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor'
+        });
+    }
+});
+
+
+
+/* POST /apply
+*  Hecho por Maria Algora
+* Guardar datos del registro antes de crear la cuenta
+* Body: firstName, lastName, email, dni, phone, townHallId
+*/
+app.post('/apply', async (req, res) => {
+    try {
+        const { firstName, lastName, email, dni, phone, townHallId } = req.body;
+
+        const resultado = await logica.apply({
+            firstName, lastName, email, dni, phone, townHallId
+        });
+
+        if (resultado.success) {
+            res.status(200).json(resultado);
+        } else {
+            res.status(400).json(resultado);
+        }
+    } catch (error) {
+        console.error('Error en /apply:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * DELETE /application/:applicationId
+ * Hecho por Maria Algora
+ * Elimina solicitudes por ID
+ */
+app.delete('/application/:applicationId', async (req, res) => {
+    try {
+        const { applicationId } = req.params;
+
+        if (!applicationId) {
+            return res.status(400).json({ success: false, message: 'Falta applicationId' });
+        }
+
+        const deleted = await logica.deleteApplication(applicationId);
+
+        if (deleted) {
+            return res.status(200).json({ success: true, message: 'Solicitud eliminada' });
+        } else {
+            return res.status(404).json({ success: false, message: 'Solicitud no encontrada' });
+        }
+    } catch (error) {
+        console.error('Error en DELETE /application/:applicationId:', error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor' });
     }
 });
 
