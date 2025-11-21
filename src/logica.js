@@ -10,12 +10,12 @@ const db = require('./config/database');
  */
 async function registerUser(username, email, password, townHallId) {
     try {
-		
-		/* Al colocar las variable en corchetes extrae solamente lo primero que se encuentre en el array de
-			respuesta de MySQL, evitando tener que hacer la descontruccion despues
-		*/
-		
-		// Verificar si el usuario o email ya existen
+
+        /* Al colocar las variable en corchetes extrae solamente lo primero que se encuentre en el array de
+            respuesta de MySQL, evitando tener que hacer la descontruccion despues
+        */
+
+        // Verificar si el usuario o email ya existen
         const [existingUsers] = await db.query(
             'SELECT * FROM users WHERE email = ? OR username = ?',
             [email, username]
@@ -250,7 +250,7 @@ async function updateUserActivity(userId, time, distance) {
         // Calcular nuevos valores
         const newActiveHours = user.active_hours + time;
         const newTotalDistance = user.total_distance + distance;
-		
+
 
         // Actualizar la base de datos
         await db.query(
@@ -276,11 +276,136 @@ async function updateUserActivity(userId, time, distance) {
     }
 }
 
+async function getNodos(tipo = 'todos') {
+    try {
+        const CO_MAX = 50;        // CO máximo en ppm
+        const O3_MAX = 500;      // Ozono máximo en μg/m³
+        const NO2_MAX = 500;     // NO2 máximo en μg/m³
+
+        let query = `
+            SELECT 
+                n.id,
+                u.username,
+                n.status,
+                n.lastStatusUpdate
+            FROM nodes n
+            LEFT JOIN users u ON n.user_id = u.id
+        `;
+
+        const [todosNodos] = await db.query(query);
+
+        if (tipo === 'todos') {
+            return {
+                success: true,
+                nodos: todosNodos
+            };
+        }
+
+        //El criterio son 24h inactividad
+        if (tipo === 'inactivos') {
+            const nodosInactivos = todosNodos.filter(nodo => {
+                const horasInactivo = (new Date() - new Date(nodo.lastStatusUpdate)) / (1000 * 60 * 60);
+                return horasInactivo > 24;
+            });
+
+            return {
+                success: true,
+                nodos: nodosInactivos
+            };
+        }
+
+        //El criterio son valores extremos, mediciones identicas y cambios bruscos
+        if (tipo === 'erroneos') {
+            const queryErroneos = `WITH mediciones_recientes AS (
+                SELECT 
+                    node_id,
+                    co_value,
+                    o3_value, 
+                    no2_value,
+                    timestamp
+                FROM measurements 
+                WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 4 HOUR)
+            )
+            SELECT DISTINCT n.id
+            FROM nodes n
+            LEFT JOIN mediciones_recientes m ON n.id = m.node_id
+            WHERE (
+                -- 1. VALORES IRREALES
+                m.co_value > 50 OR m.co_value < 0 OR
+                m.o3_value > 500 OR m.o3_value < 0 OR
+                m.no2_value > 500 OR m.no2_value < 0
+
+                -- 2. LECTURAS FIJAS (SOLO 2 VALORES DISTINTOS EN 4H)
+                OR (
+                    SELECT COUNT(DISTINCT m2.co_value) 
+                    FROM mediciones_recientes m2 
+                    WHERE m2.node_id = n.id
+                ) <= 2
+                OR (
+                    SELECT COUNT(DISTINCT m2.o3_value) 
+                    FROM mediciones_recientes m2 
+                    WHERE m2.node_id = n.id
+                ) <= 2
+                OR (
+                    SELECT COUNT(DISTINCT m2.no2_value) 
+                    FROM mediciones_recientes m2 
+                    WHERE m2.node_id = n.id
+                ) <= 2
+                
+                -- 3. CAMBIOS BRUSCOS
+                OR (
+                    SELECT MAX(m2.co_value) - MIN(m2.co_value)
+                    FROM mediciones_recientes m2 
+                    WHERE m2.node_id = n.id
+                ) > 100
+                OR (
+                    SELECT MAX(m2.o3_value) - MIN(m2.o3_value)
+                    FROM mediciones_recientes m2 
+                    WHERE m2.node_id = n.id
+                ) > 500
+                OR (
+                    SELECT MAX(m2.no2_value) - MIN(m2.no2_value)
+                    FROM mediciones_recientes m2 
+                    WHERE m2.node_id = n.id
+                ) > 300
+            )
+            GROUP BY n.id
+            HAVING COUNT(m.id) >= 4`;
+
+            //Tomo los ID de los erroneos
+            const [nodosErroneosIds] = await db.query(queryErroneos);
+            const idsErroneos = nodosErroneosIds.map(item => item.id);
+            //Y de todos los nodos tomos filtro pot id para listar solo los erroneos
+            const nodosErroneos = todosNodos.filter(nodo =>
+                idsErroneos.includes(nodo.id)
+            );
+
+            return {
+                success: true,
+                nodos: nodosErroneos
+            };
+        }
+
+        return {
+            success: false,
+            message: 'Tipo de informe no válido'
+        };
+
+    } catch (error) {
+        console.error('Error en getNodos:', error);
+        return {
+            success: false,
+            message: 'Error al generar informe'
+        };
+    }
+}
+
 // Exportar todas las funciones
 module.exports = {
     registerUser,
     loginUser,
     getUser,
     linkNodeToUser,
-    updateUserActivity
+    updateUserActivity,
+    getNodos
 };

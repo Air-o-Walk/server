@@ -21,7 +21,8 @@ app.get('/', (req, res) => {
             'POST /login': 'Iniciar sesión',
             'GET /user/:userId': 'Obtener información de usuario',
             'POST /node/link': 'Vincular nodo a usuario',
-            'PUT /user/activity': 'Actualizar actividad de usuario'
+            'PUT /user/activity': 'Actualizar actividad de usuario',
+            'GET /informeNodos': 'Estado de los nodos'
         }
     });
 });
@@ -181,6 +182,34 @@ app.put('/user/activity', async (req, res) => {
 
     } catch (error) {
         console.error('Error en /user/activity:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * Hecho por Maria Algora
+ * GET /informeNodos/todos → Todos los nodos
+GET /informeNodos/inactivos → Nodos inactivos >24h
+GET /informeNodos/erroneos → Nodos con lecturas erróneas
+ * Obtener información de los nodos
+ * Params: {todos, inactivos, erroneos}
+ */
+app.get('/informeNodos/:tipo', async (req, res) => {
+    try {
+        const { tipo } = req.params;
+        const resultado = await logica.getNodos(tipo);
+
+        if (resultado.success) {
+            res.status(200).json(resultado);
+        } else {
+            res.status(404).json(resultado);
+        }
+
+    } catch (error) {
+        console.error('Error en /informeNodos', error);
         res.status(500).json({
             success: false,
             message: 'Error interno del servidor'
