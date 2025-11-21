@@ -128,7 +128,7 @@ async function loginUser(username, password) {
  * 
  * userId ---> getUser() ---> {success, user: {username, email, points, active_hours, total_distance, town_hall, role}} || error "Usuario no encontrado"
  */
-async function getUser(userId) {
+async function getUser(userId) {    
     try {
         // Buscar usuario con información de ayuntamiento y rol
         const [users] = await db.query(
@@ -272,6 +272,144 @@ async function updateUserActivity(userId, time, distance) {
         return {
             success: false,
             message: 'Error al actualizar actividad'
+        };
+    }
+}
+
+/**
+ * 6. updateUser(userId, updateData)
+ * Actualiza la información del perfil de usuario (username, email, password)
+ * 
+ * userId, {username, email, current_password, new_password} ---> updateUser() ---> {success, message, user} || error
+ */
+async function updateUser(userId, updateData) {
+    try {
+        const { username, email, current_password, new_password } = updateData;
+
+        // Verificar que el usuario existe
+        const [users] = await db.query(
+            'SELECT id, username, email, password FROM users WHERE id = ?',
+            [userId]
+        );
+
+        if (users.length === 0) {
+            return {
+                success: false,
+                message: 'Error: Usuario no encontrado'
+            };
+        }
+
+        const user = users[0];
+        const updates = [];
+        const values = [];
+
+        // Validar que se esté enviando al menos un campo a actualizar
+        if (!username && !email && !new_password) {
+            return {
+                success: false,
+                message: 'Error: Se debe proporcionar al menos un campo para actualizar'
+            };
+        }
+
+        // Actualizar username
+        if (username && username !== user.username) {
+            // Verificar que el nuevo username no esté en uso por otro usuario
+            const [existingUsername] = await db.query(
+                'SELECT id FROM users WHERE username = ? AND id != ?',
+                [username, userId]
+            );
+
+            if (existingUsername.length > 0) {
+                return {
+                    success: false,
+                    message: 'Error: El nombre de usuario ya está en uso'
+                };
+            }
+
+            updates.push('username = ?');
+            values.push(username);
+        }
+
+        // Actualizar email
+        if (email && email !== user.email) {
+            // Validar formato de email
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                return {
+                    success: false,
+                    message: 'Error: Formato de email inválido'
+                };
+            }
+
+            // Verificar que el nuevo email no esté en uso por otro usuario
+            const [existingEmail] = await db.query(
+                'SELECT id FROM users WHERE email = ? AND id != ?',
+                [email, userId]
+            );
+
+            if (existingEmail.length > 0) {
+                return {
+                    success: false,
+                    message: 'Error: El email ya está en uso'
+                };
+            }
+
+            updates.push('email = ?');
+            values.push(email);
+        }
+
+        // Actualizar password
+        if (new_password) {
+            if (!current_password) {
+                return {
+                    success: false,
+                    message: 'Error: La contraseña actual es requerida para cambiar la contraseña'
+                };
+            }
+
+            // Verificar contraseña actual
+            const passwordMatch = await bcrypt.compare(current_password, user.password);
+            if (!passwordMatch) {
+                return {
+                    success: false,
+                    message: 'Error: La contraseña actual es incorrecta'
+                };
+            }
+
+            // Validar fortaleza de la nueva contraseña
+            if (new_password.length < 6) {
+                return {
+                    success: false,
+                    message: 'Error: La nueva contraseña debe tener al menos 6 caracteres'
+                };
+            }
+
+            // Hashear nueva contraseña
+            const hashedPassword = await bcrypt.hash(new_password, 10);
+            updates.push('password = ?');
+            values.push(hashedPassword);
+        }
+
+        // Si no hay cambios reales
+        if (updates.length === 0) {
+            return {
+                success: false,
+                message: 'Error: No se detectaron cambios para actualizar'
+            };
+        }
+
+        // Agregar userId al final de los valores para la condición WHERE
+        values.push(userId);
+
+        // Actualizar en la base de datos
+        const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+        await db.query(query, values);
+
+    } catch (error) {
+        console.error('Error en updateUser:', error);
+        return {
+            success: false,
+            message: 'Error al actualizar usuario: ' + error.message
         };
     }
 }

@@ -20,6 +20,7 @@ app.get('/', (req, res) => {
             'POST /register': 'Registrar nuevo usuario',
             'POST /login': 'Iniciar sesión',
             'GET /user/:userId': 'Obtener información de usuario',
+            'PUT /users/:userId': 'Actualizar perfil de usuario',
             'POST /node/link': 'Vincular nodo a usuario',
             'PUT /user/activity': 'Actualizar actividad de usuario'
         }
@@ -113,6 +114,40 @@ app.get('/user/:userId', async (req, res) => {
 
     } catch (error) {
         console.error('Error en /user/:userId:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * PUT /user/:userId
+ * Actualiza pedil
+ * Params: userId
+ */
+app.put('/user/:userId', async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        const updateData = req.body;
+
+        const result = await logica.updateUser(userId, updateData);
+
+        if (result.success) {
+            res.json({
+                success: true,
+                message: result.message,
+                data: result.user
+            });
+        } else {
+            res.status(400).json({
+                success: false,
+                message: result.message
+            });
+        }
+
+    } catch (error) {
+        console.error('Error en PUT /users/:userId:', error);
         res.status(500).json({
             success: false,
             message: 'Error interno del servidor'
