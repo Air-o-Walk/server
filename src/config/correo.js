@@ -1,9 +1,5 @@
 // correo.js
 //Hecho por Maria Algora
-
-const FileLogger = require('../logger');
-new FileLogger('mi_log.txt');
-
 const nodemailer = require('nodemailer');
 
 const configuracionCorreo = nodemailer.createTransport({

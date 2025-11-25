@@ -3,10 +3,7 @@ const db = require('./config/database');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const { bienvenida } = require('./config/correo.js');
-const FileLogger = require('./logger');
 
-// Activa el logger
-new FileLogger('mi_log.txt');
 
 
 /**

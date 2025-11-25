@@ -2,9 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const logica = require('./logica');
-const FileLogger = require('./logger');
-// Activa el logger
-new FileLogger('mi_log.txt');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
