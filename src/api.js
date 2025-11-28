@@ -26,7 +26,7 @@ app.get('/', (req, res) => {
             'GET /user/:userId': 'Obtener información de usuario',
             'POST /node/link': 'Vincular nodo a usuario',
             'PUT /user/activity': 'Actualizar actividad de usuario',
-            'GET /informeNodos': 'Estado de los nodos'
+            'GET /informeNodos': 'Estado de los nodos',
             'PUT /user/activity': 'Actualizar actividad de usuario',
             'GET /getAyuntamientos': 'Lista de ayuntamientos',
             'POST /apply': 'Crear solicitud',
