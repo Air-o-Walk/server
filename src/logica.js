@@ -3,7 +3,12 @@ const db = require('./config/database');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const { bienvenida } = require('./config/correo.js');
+const turf = require('@turf/turf'); // Necesario para test de punto en polígono
 
+//const FileLogger = require('./logger');
+
+// Activa el logger
+//new FileLogger('mi_log.txt');
 
 
 /**
@@ -68,15 +73,7 @@ async function registerUser(email) {
             return `${preparar(inicialesNombre)}.${preparar(inicialesApellido)}`;
         };
 
-        let username = crearUsername(firstName, lastName);
-
-		console.log("ANTES DE INSERTAR USUARIO")
-		
-
-		console.log(townHallId)
-				console.log("DESPUES DE TOWNHALL")
-
-		
+        let username = crearUsername(firstName, lastName);		
 		
         // Crear el nuevo usuario
         const [nuevoUsuario] = await db.query(
@@ -84,9 +81,6 @@ async function registerUser(email) {
              VALUES (?, ?, ?, ?, 0, 0, 0, ?)`,
             [username, email, hashedPassword, roleId, townHallId]
         );
-		
-		console.log("DESPUES DE INSERTAR USUARIO")
-
 
         if (nuevoUsuario.affectedRows !== 1) {
             return { success: false, message: 'Error al insertar usuario' };
@@ -338,7 +332,7 @@ async function updateUserActivity(userId, time, distance) {
         // Calcular nuevos valores
         const newActiveHours = user.active_hours + time;
         const newTotalDistance = user.total_distance + distance;
-
+		
 
         // Actualizar la base de datos
         await db.query(
@@ -615,8 +609,8 @@ async function get_puntos(userId) {
  * valores_grafica(userId)
  * Hecho por Meryame Ait Boumlik
  * Obtiene los valores necesarios para dibujar la gráfica de calidad del aire
- * (O₃, NO₂, CO y horas) de las últimas 8 horas del nodo vinculado al usuario.
- * Diseño: userId → valores_grafica() → {success, graph:{[timestamps], [o3], [no2], [co]}}
+ * Ahora también calcula el índice normalizado (0–1) por instante.
+ * Diseño: userId → valores_grafica() → {success, graph:{timestamps, index, o3, no2, co}}
  */
 async function valores_grafica(userId) {
     try {
@@ -643,28 +637,39 @@ async function valores_grafica(userId) {
         const o3 = [];
         const no2 = [];
         const co = [];
+        const index = [];   
 
         rows.forEach(row => {
+            // Timestamp label
             const date = new Date(row.timestamp);
             const label = date.toLocaleTimeString('es-ES', {
                 hour: '2-digit',
                 minute: '2-digit'
             });
-
             timestamps.push(label);
-            o3.push(row.o3_value || 0);
-            no2.push(row.no2_value || 0);
-            co.push(row.co_value || 0);
+
+            // Raw values
+            const o3v = row.o3_value || 0;
+            const no2v = row.no2_value || 0;
+            const cov = row.co_value || 0;
+
+            o3.push(o3v);
+            no2.push(no2v);
+            co.push(cov);
+
+            // NORMALIZED INDEX (0–1+)
+            const idx = Math.max(
+                o3v / 100,
+                no2v / 100,
+                cov / 2
+            );
+
+            index.push(idx);
         });
 
         return {
             success: true,
-            graph: {
-                timestamps,
-                o3,
-                no2,
-                co
-            }
+            graph: { timestamps, index, o3, no2, co }
         };
 
     } catch (error) {
@@ -675,6 +680,7 @@ async function valores_grafica(userId) {
         };
     }
 }
+
 
 /**
  * getAirQualitySummary(userId)
@@ -732,58 +738,44 @@ async function getAirQualitySummary(userId) {
  * Diseño: measurements[] → clasificarCalidadDelAire() → {status, summaryText}
  */
 function clasificarCalidadDelAire(measurements) {
-    let o3High = 0, o3Mid = 0;
-    let no2High = 0, no2Mid = 0;
-    let coHigh = 0, coMid = 0;
+    let maxIndex = 0;
 
     measurements.forEach(m => {
         const o3 = m.o3_value || 0;
         const no2 = m.no2_value || 0;
         const co = m.co_value || 0;
 
-        // O3 (µg/m3) 
-        if (o3 > 300) o3High++;
-        else if (o3 > 200) o3Mid++;
+        const idx = Math.max(
+            o3 / 100,
+            no2 / 100,
+            co / 2
+        );
 
-        // NO2 (µg/m3)
-        if (no2 > 188) no2High++;
-        else if (no2 > 94) no2Mid++;
-
-        // CO (ppm)
-        if (co > 15) coHigh++;
-        else if (co > 5) coMid++;
+        if (idx > maxIndex) maxIndex = idx;
     });
 
-    const total = measurements.length;
-    let status;
-    let summaryText;
+    let status, summaryText;
 
-    if (o3High === 0 && no2High === 0 && coHigh === 0 &&
-        o3Mid < total * 0.2 &&
-        no2Mid < total * 0.2 &&
-        coMid < total * 0.2) {
-
-        status = 'buena';
-        summaryText = 'La calidad del aire ha sido buena durante tu recorrido.';
+    if (maxIndex < 0.3) {
+        status = "buena";
+        summaryText = "La calidad del aire ha sido buena.";
     }
-    else if (o3High === 0 && no2High === 0 && coHigh === 0) {
-        status = 'regular';
-        summaryText = 'La calidad del aire ha sido aceptable, con algunos valores moderados.';
+    else if (maxIndex < 0.5) {
+        status = "regular";
+        summaryText = "La calidad del aire ha sido aceptable.";
     }
-    else if (o3High < total * 0.3 &&
-             no2High < total * 0.3 &&
-             coHigh < total * 0.3) {
-
-        status = 'picos';
-        summaryText = 'En general el aire ha sido razonable, pero con varios picos de contaminación.';
+    else if (maxIndex < 0.8) {
+        status = "picos";
+        summaryText = "Se han detectado varios picos de contaminación.";
     }
     else {
-        status = 'mala';
-        summaryText ='La calidad del aire ha sido mala en varios momentos de tu recorrido.';
+        status = "mala";
+        summaryText = "La calidad del aire ha sido mala.";
     }
 
     return { status, summaryText };
 }
+
 /**
  * insertMeasurement(nodeId, co, o3, no2, latitude, longitude)
  * Hecho por Meryame Ait Boumlik
@@ -1053,202 +1045,127 @@ async function addPoints(userId, pointsToAdd) {
 //Muestra estados de los nodos
 /**
  * Servicio para la gestión y consulta de nodos
- * Ahora actualiza automáticamente ambos estados: inactive -> active y active -> inactive
  */
 async function getNodos(tipo = 'todos') {
     try {
-        const UMBRALES = {
-            CO_MAX: 50,
-            O3_MAX: 500,
-            NO2_MAX: 500,
-            HORAS_INACTIVIDAD: 24,
-            INTERVALO_MEDICIONES: 24,
-            HORAS_RECIENTES: 1 // Para considerar un nodo como activo reciente
-        };
-
-        // Validar tipo de consulta
-        const tiposValidos = ['todos', 'inactivos', 'erroneos'];
-        if (!tiposValidos.includes(tipo)) {
-            return {
-                success: false,
-                message: 'Tipo de informe no válido',
-                nodos: []
-            };
-        }
-
-        // 1. PRIMERO: Actualizar estados automáticamente en ambas direcciones
-        
-        // 1a. Activar nodos que tienen mediciones recientes (inactive -> active)
-        const activateQuery = `
-            UPDATE nodes 
-            SET status = 'active',
-                lastStatusUpdate = NOW()
-            WHERE status = 'inactive'
-            AND id IN (
-                SELECT DISTINCT node_id 
-                FROM measurements 
-                WHERE timestamp >= DATE_SUB(NOW(), INTERVAL ? HOUR)
-            )
-        `;
-        
-        const [activateResult] = await db.query(activateQuery, [UMBRALES.HORAS_RECIENTES]);
-
-        // 1b. Desactivar nodos inactivos por más de 24h (active -> inactive)
-        const deactivateQuery = `
-            UPDATE nodes 
-            SET status = 'inactive',
-                lastStatusUpdate = NOW()
-            WHERE 
-                (lastStatusUpdate IS NULL OR TIMESTAMPDIFF(HOUR, lastStatusUpdate, NOW()) > ?)
-                AND status = 'active'
-        `;
-        
-        const [deactivateResult] = await db.query(deactivateQuery, [UMBRALES.HORAS_INACTIVIDAD]);
-
-        // 2. LUEGO: Consultar los nodos según el tipo solicitado
-        if (tipo === 'todos') {
-            const query = `
-                SELECT 
-                    n.id,
-                    n.name,
-                    u.username,
-                    n.status,
-                    n.lastStatusUpdate,
-                    TIMESTAMPDIFF(HOUR, n.lastStatusUpdate, NOW()) as horas_desde_actualizacion,
-                    EXISTS (
-                        SELECT 1 FROM measurements m 
-                        WHERE m.node_id = n.id 
-                        AND m.timestamp >= DATE_SUB(NOW(), INTERVAL ? HOUR)
-                    ) as tiene_mediciones_recientes
-                FROM nodes n
-                LEFT JOIN users u ON n.user_id = u.id
-                ORDER BY n.name ASC
-            `;
-
-            const [nodos] = await db.query(query, [UMBRALES.HORAS_RECIENTES]);
-            return {
-                success: true,
-                nodos: nodos,
-                actualizados: {
-                    activados: activateResult.affectedRows,
-                    desactivados: deactivateResult.affectedRows
-                }
-            };
-        }
-
-        // Nodos inactivos (>24 horas)
-        if (tipo === 'inactivos') {
-            const query = `
-                SELECT 
-                    n.id,
-                    n.name,
-                    u.username,
-                    n.status,
-                    n.lastStatusUpdate,
-                    TIMESTAMPDIFF(HOUR, n.lastStatusUpdate, NOW()) as horas_inactivo,
-                    EXISTS (
-                        SELECT 1 FROM measurements m 
-                        WHERE m.node_id = n.id 
-                        AND m.timestamp >= DATE_SUB(NOW(), INTERVAL ? HOUR)
-                    ) as tiene_mediciones_recientes
-                FROM nodes n
-                LEFT JOIN users u ON n.user_id = u.id
-                WHERE 
-                    n.status = 'inactive'
-                ORDER BY horas_inactivo DESC
-            `;
-
-            const [nodosInactivos] = await db.query(query, [UMBRALES.HORAS_RECIENTES]);
-            return {
-                success: true,
-                nodos: nodosInactivos,
-                actualizados: {
-                    activados: activateResult.affectedRows,
-                    desactivados: deactivateResult.affectedRows
-                }
-            };
-        }
-
-        // Nodos con lecturas erróneas
-        if (tipo === 'erroneos') {
-            // 1. Nodos con valores fuera de rango
-        const queryOutOfRange = `
-            SELECT DISTINCT n.id, n.name, n.status, u.username
+        let query = `
+            SELECT 
+                n.id,
+                n.name,
+                u.username,
+                n.status,
+                n.lastStatusUpdate
             FROM nodes n
-			LEFT JOIN users u ON n.user_id = u.id
-            JOIN measurements m ON n.id = m.node_id
-            WHERE (
-                m.co_value < 0 OR m.co_value > 50 OR
-                m.o3_value < 0 OR m.o3_value > 500 OR
-                m.no2_value < 0 OR m.no2_value > 500
-            )
-            AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            LEFT JOIN users u ON n.user_id = u.id
         `;
-        const [outOfRange] = await db.query(queryOutOfRange);
 
-        // 2. Nodos con valores fijos (p.ej. CO)
-        const queryFixed = `
-             SELECT 
-        n.id, 
-        n.name, 
-        n.status,
-		u.username
-    FROM nodes n
-	LEFT JOIN users u ON n.user_id = u.id
-    JOIN measurements m ON n.id = m.node_id
-    WHERE m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-    GROUP BY n.id, n.name, n.status
-    HAVING 
-        COUNT(*) >= 3
-        AND (
-            COUNT(DISTINCT m.co_value) <= 2
-            OR COUNT(DISTINCT m.o3_value) <= 2
-            OR COUNT(DISTINCT m.no2_value) <= 2
-        )
-        `;
-        const [fixedValues] = await db.query(queryFixed);
+        const [todosNodos] = await db.query(query);
 
-        // 3. Nodos con cambios bruscos (p.ej. CO)
-        const queryAbrupt = `
-    SELECT 
-        n.id, 
-        n.name, 
-        n.status,
-		u.username
-    FROM nodes n
-	LEFT JOIN users u ON n.user_id = u.id
-    JOIN measurements m ON n.id = m.node_id
-    WHERE m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-    GROUP BY n.id, n.name, n.status
-    HAVING 
-        (MAX(m.co_value)  - MIN(m.co_value))  > 100
-        OR (MAX(m.o3_value)  - MIN(m.o3_value))  > 100
-        OR (MAX(m.no2_value) - MIN(m.no2_value)) > 100
-        `;
-        const [abruptChanges] = await db.query(queryAbrupt);
-
-        // Junta todos los nodos y elimina duplicados por id
-        const allNodes = [...outOfRange, ...fixedValues, ...abruptChanges];
-        const seen = new Set();
-        const erroneousNodes = [];
-        for (const node of allNodes) {
-            if (!seen.has(node.id)) {
-                erroneousNodes.push(node);
-                seen.add(node.id);
-            }
+        if (tipo === 'todos') {
+            return {
+                success: true,
+                nodos: todosNodos
+            };
         }
-		return { success: true, nodos: erroneousNodes };
-    }
 
-    } catch (error) {
-        console.error('Error en getNodos:', error);
+        if (tipo === 'inactivos') {
+            const UN_MES_MS = 30 * 24 * 60 * 60 * 1000;
+            const ahora = Date.now();
+
+            const nodosInactivos = todosNodos.filter(nodo => {
+                const last = new Date(nodo.lastStatusUpdate).getTime();
+                return (ahora - last) > UN_MES_MS;
+            });
+
+            return {
+                success: true,
+                nodos: nodosInactivos
+            };
+        }
+
+        if (tipo === 'erroneos') {
+            const queryErroneos = `WITH mediciones_recientes AS (
+    SELECT 
+        node_id,
+        co_value,
+        o3_value, 
+        no2_value,
+        timestamp
+    FROM measurements 
+    WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+)
+SELECT 
+    n.id
+FROM nodes n
+LEFT JOIN mediciones_recientes m ON n.id = m.node_id
+WHERE (
+    m.co_value > 50 OR m.co_value < 0 OR
+    m.o3_value > 500 OR m.o3_value < 0 OR
+    m.no2_value > 500 OR m.no2_value < 0
+
+    OR (
+        SELECT COUNT(DISTINCT m2.co_value) 
+        FROM mediciones_recientes m2 
+        WHERE m2.node_id = n.id
+    ) <= 2
+    OR (
+        SELECT COUNT(DISTINCT m2.o3_value) 
+        FROM mediciones_recientes m2 
+        WHERE m2.node_id = n.id
+    ) <= 2
+    OR (
+        SELECT COUNT(DISTINCT m2.no2_value) 
+        FROM mediciones_recientes m2 
+        WHERE m2.node_id = n.id
+    ) <= 2
+
+    OR (
+        SELECT MAX(m2.co_value) - MIN(m2.co_value)
+        FROM mediciones_recientes m2 
+        WHERE m2.node_id = n.id
+    ) > 100
+    OR (
+        SELECT MAX(m2.o3_value) - MIN(m2.o3_value)
+        FROM mediciones_recientes m2 
+        WHERE m2.node_id = n.id
+    ) > 500
+    OR (
+        SELECT MAX(m2.no2_value) - MIN(m2.no2_value)
+        FROM mediciones_recientes m2 
+        WHERE m2.node_id = n.id
+    ) > 300
+)
+GROUP BY n.id
+HAVING COUNT(m.node_id) >= 4`;
+
+            const [nodosErroneosIds] = await db.query(queryErroneos);
+            const idsErroneos = nodosErroneosIds.map(item => item.id);
+            const nodosErroneos = todosNodos.filter(nodo =>
+                idsErroneos.includes(nodo.id)
+            );
+
+            return {
+                success: true,
+                nodos: nodosErroneos
+            };
+        }
+
         return {
             success: false,
-            message: 'Error al generar informe',
+            message: 'Tipo de informe no válido'
+        };
+
+    } catch (error) {
+        return {
+            success: false,
+            message: error && error.message ? error.message : 'Error desconocido',
+            error: error && error.stack ? error.stack : error ? String(error) : null,
             nodos: []
         };
     }
 }
+
+
 
 //Hecho por Maria ALgora
 //Actualiza el perfil
@@ -1364,7 +1281,7 @@ async function updateUser(userId, updateData) {
         if (updates.length === 0) {
             return {
                 success: false,
-                message: 'Error: No se detectaron cambios para actualizar'
+                message: 'Error: No sev detectaron cambios para actualizar'
             };
         }
 
@@ -1374,6 +1291,11 @@ async function updateUser(userId, updateData) {
         // Actualizar en la base de datos
         const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
         await db.query(query, values);
+		
+		return {
+    		success: true,
+    		message: 'Usuario actualizado correctamente'
+		};
 
     } catch (error) {
         console.error('Error en updateUser:', error);
@@ -1607,130 +1529,259 @@ function generateCouponCode() {
     return code;
 }
 
-
-async function getNodos(tipo = 'todos') {
+/**
+ * AUTOR: SANTIAGO AGUIRRE
+ * getPrizes()
+ * Obtiene todas las recompensas activas disponibles
+ * 
+ * ---> getPrizes() ---> {success: true, prizes: [...]} || {success: false, message: string}
+ */
+async function getMeasurements() {
     try {
-        const CO_MAX = 50;        // CO máximo en ppm
-        const O3_MAX = 500;      // Ozono máximo en μg/m³
-        const NO2_MAX = 500;     // NO2 máximo en μg/m³
-
-        let query = `
-            SELECT 
-                n.id,
-                u.username,
-                n.status,
-                n.lastStatusUpdate
-            FROM nodes n
-            LEFT JOIN users u ON n.user_id = u.id
-        `;
-
-        const [todosNodos] = await db.query(query);
-
-        if (tipo === 'todos') {
-            return {
-                success: true,
-                nodos: todosNodos
-            };
-        }
-
-        //El criterio son 24h inactividad
-        if (tipo === 'inactivos') {
-            const nodosInactivos = todosNodos.filter(nodo => {
-                const horasInactivo = (new Date() - new Date(nodo.lastStatusUpdate)) / (1000 * 60 * 60);
-                return horasInactivo > 24;
-            });
-
-            return {
-                success: true,
-                nodos: nodosInactivos
-            };
-        }
-
-        //El criterio son valores extremos, mediciones identicas y cambios bruscos
-        if (tipo === 'erroneos') {
-            const queryErroneos = `WITH mediciones_recientes AS (
-                SELECT 
-                    node_id,
-                    co_value,
-                    o3_value, 
-                    no2_value,
-                    timestamp
-                FROM measurements 
-                WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 4 HOUR)
-            )
-            SELECT DISTINCT n.id
-            FROM nodes n
-            LEFT JOIN mediciones_recientes m ON n.id = m.node_id
-            WHERE (
-                -- 1. VALORES IRREALES
-                m.co_value > 50 OR m.co_value < 0 OR
-                m.o3_value > 500 OR m.o3_value < 0 OR
-                m.no2_value > 500 OR m.no2_value < 0
-
-                -- 2. LECTURAS FIJAS (SOLO 2 VALORES DISTINTOS EN 4H)
-                OR (
-                    SELECT COUNT(DISTINCT m2.co_value) 
-                    FROM mediciones_recientes m2 
-                    WHERE m2.node_id = n.id
-                ) <= 2
-                OR (
-                    SELECT COUNT(DISTINCT m2.o3_value) 
-                    FROM mediciones_recientes m2 
-                    WHERE m2.node_id = n.id
-                ) <= 2
-                OR (
-                    SELECT COUNT(DISTINCT m2.no2_value) 
-                    FROM mediciones_recientes m2 
-                    WHERE m2.node_id = n.id
-                ) <= 2
-                
-                -- 3. CAMBIOS BRUSCOS
-                OR (
-                    SELECT MAX(m2.co_value) - MIN(m2.co_value)
-                    FROM mediciones_recientes m2 
-                    WHERE m2.node_id = n.id
-                ) > 100
-                OR (
-                    SELECT MAX(m2.o3_value) - MIN(m2.o3_value)
-                    FROM mediciones_recientes m2 
-                    WHERE m2.node_id = n.id
-                ) > 500
-                OR (
-                    SELECT MAX(m2.no2_value) - MIN(m2.no2_value)
-                    FROM mediciones_recientes m2 
-                    WHERE m2.node_id = n.id
-                ) > 300
-            )
-            GROUP BY n.id
-            HAVING COUNT(m.id) >= 4`;
-
-            //Tomo los ID de los erroneos
-            const [nodosErroneosIds] = await db.query(queryErroneos);
-            const idsErroneos = nodosErroneosIds.map(item => item.id);
-            //Y de todos los nodos tomos filtro pot id para listar solo los erroneos
-            const nodosErroneos = todosNodos.filter(nodo =>
-                idsErroneos.includes(nodo.id)
-            );
-
-            return {
-                success: true,
-                nodos: nodosErroneos
-            };
-        }
+        // Obtener todas las medidas disponibles
+        const [measurements] = await db.query(
+            `SELECT * FROM measurements`
+        );
 
         return {
-            success: false,
-            message: 'Tipo de informe no válido'
+            success: true,
+            measurements: measurements
         };
 
     } catch (error) {
-        console.error('Error en getNodos:', error);
+        console.error('Error en getMeasurements:', error);
         return {
             success: false,
-            message: 'Error al generar informe'
+            message: 'Error al obtener medidas'
         };
     }
 }
+
+/**
+ * AUTOR: CHRISTOPHER YORIS
+ * Recuperación de contraseña:
+ * - Busca al usuario por email
+ * - Cambia la contraseña por una temporal fija (Password1234.)
+ * - Intenta enviar correo
+ * - Devuelve success al frontend siempre
+ */
+
+async function recoverPassword(email) {
+    try {
+        // 1. Buscar usuario por email
+        const [users] = await db.query(
+            "SELECT id, username FROM users WHERE email = ?",
+            [email]
+        );
+
+        // Seguridad: siempre devolvemos success aunque el correo no exista
+        if (users.length === 0) {
+            return { success: true, message: "Si el correo existe, se enviará una contraseña temporal." };
+        }
+
+        const user = users[0];
+
+        // 2. Contraseña temporal fija (modo testing)
+        const tempPassword = generarPasswordTemporal(); // → "Password1234."
+
+        // 3. Hashear la contraseña temporal
+        const hashed = await bcrypt.hash(tempPassword, 10);
+
+        // 4. Actualizar la contraseña del usuario en la base de datos
+        await db.query(
+            "UPDATE users SET password = ? WHERE id = ?",
+            [hashed, user.id]
+        );
+
+        // 5. Enviar email (placeholder, no funcionará hasta configurar SMTP)
+        try {
+            await enviarCorreoRecuperacion(email, user.username, tempPassword);
+        } catch (emailError) {
+            console.warn("⚠ SMTP no configurado aún — contraseña temporal generada igualmente.");
+        }
+
+        return {
+            success: true,
+            message: "Si el correo existe, se enviará una contraseña temporal."
+        };
+
+    } catch (error) {
+        console.error("Error en recoverPassword:", error);
+        return { success: false, message: "Error interno en recuperación" };
+    }
+}
+
+
+// Contraseña temporal FIJA para testing
+function generarPasswordTemporal() {
+    return "Password1234."; 
+}
+
+
+// Placeholder para envío de emails
+async function enviarCorreoRecuperacion(to, username, tempPassword) {
+
+    const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+            user: "PENDIENTE_DE_CONFIGURAR",
+            pass: "PENDIENTE_DE_CONFIGURAR"
+        }
+    });
+
+    const html = `
+        <h2>Recuperación de contraseña</h2>
+        <p>Hola <strong>${username}</strong>,</p>
+        <p>Tu nueva contraseña temporal es:</p>
+        <h3>${tempPassword}</h3>
+        <p>Inicia sesión y cámbiala cuando quieras.</p>
+    `;
+
+    return transporter.sendMail({
+        from: "Air-o-Walk <PENDIENTE_DE_CONFIGURAR>",
+        to,
+        subject: "Tu contraseña temporal",
+        html
+    });
+}
+
+
+
+async function generateFakeMeasurements(count) {
+    try {
+        const insertedMeasurements = [];
+
+        // Definimos el polígono de Gandía
+        const polygonCoords = [
+            /*[38.9724930637672, -0.18638220396700872],
+            [38.9682187335428, -0.17812575220471538],
+            [38.96532307289798, -0.18112093279103245],
+            [38.962657122009325, -0.1844708058210799],
+            [38.9651392174368, -0.1891409229276754],
+			[38.9724930637672, -0.18638220396700872]*/
+			
+			
+			/*[39.023155258881275, -0.17927570751465835],
+            [38.95718024141943, -0.12495451134952293],
+            [38.952280521097805, -0.18181862524944353],
+            [38.99636580750054, -0.23080682309674352],
+            [39.023155258881275, -0.17927570751465835]*/
+			
+			
+			[38.97619486753026, -0.18349714625501487],
+            [38.97333777022671, -0.17411600294874113],
+            [38.96897671527094, -0.17846807974031142],
+            [38.97160841849363, -0.18649524360031886],
+            [38.97619486753026, -0.18349714625501487]
+        ];
+        const polygon = turf.polygon([polygonCoords.map(c => [c[1], c[0]])]); // [lng, lat]
+
+        // Bounding box del polígono
+        const bbox = turf.bbox(polygon); // [minX, minY, maxX, maxY]
+
+        // Fecha actual y hace 3 días
+        const now = new Date();
+        const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+        for (let i = 0; i < count; i++) {
+            // Valores aleatorios de gases			
+            const co_value = parseFloat(( 2 * 0.5).toFixed(2));
+            const o3_value = parseFloat(( 100 * 0.5).toFixed(1));
+            const no2_value = parseFloat(( 100 * 0.5).toFixed(1));
+
+            // Coordenadas aleatorias dentro del polígono
+            let lat, lng;
+            let point;
+            do {
+                lng = bbox[0] + Math.random() * (bbox[2] - bbox[0]);
+                lat = bbox[1] + Math.random() * (bbox[3] - bbox[1]);
+                point = turf.point([lng, lat]);
+            } while (!turf.booleanPointInPolygon(point, polygon));
+
+            // Node_id fijo
+            const nodeId = 153;
+
+            // Timestamp aleatorio últimos 3 días
+            const randomTime = new Date(threeDaysAgo.getTime() + Math.random() * (now.getTime() - threeDaysAgo.getTime()));
+            const timestamp = randomTime.toISOString().slice(0, 19).replace('T', ' ');
+
+            // Insertamos usando insertMeasurement
+			let result = await db.query(
+				`INSERT INTO measurements 
+				 (node_id, timestamp, co_value, o3_value, no2_value, latitude, longitude)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [nodeId, timestamp, co_value, o3_value, no2_value, lat, lng]
+        );
+            insertedMeasurements.push({
+                nodeId, co_value, o3_value, no2_value, latitude: lat, longitude: lng, timestamp, success: result.success
+            });
+        }
+
+        return {
+            success: true,
+            measurements: insertedMeasurements
+        };
+
+    } catch (error) {
+        console.error('Error en generateFakeMeasurements:', error);
+        return {
+            success: false,
+            message: 'Error al generar e insertar mediciones fake' + error
+        };
+    }
+}
+
+
+/**
+ * getNearestMeasurement(lat, lon)
+ * Hecho por Maria
+ * Busca la medición más cercana a las coordenadas dadas.
+ * Diseño: (latTarget, lonTarget) → consulta measurements → calcula distancias → devuelve {o3_value, no2_value}.
+ */
+async function getNearestMeasurement(latTarget, lonTarget) {
+    try {
+        const [rows] = await db.query(
+            `SELECT id, node_id, timestamp, co_value, o3_value, no2_value, 
+                    latitude, longitude FROM measurements`
+        );
+
+        if (rows.length === 0) {
+            return { success: false, message: "No hay mediciones" };
+        }
+
+        const measurementsWithDistance = rows.map(row => {
+            const distance = calculateDistance(latTarget, lonTarget, row.latitude, row.longitude);
+            return { o3_value: row.o3_value, no2_value: row.no2_value, distance_km: distance };
+        });
+
+        const nearest = measurementsWithDistance.sort((a, b) => a.distance_km - b.distance_km)[0];
+
+        return { 
+            success: true, 
+            data: { 
+                o3_value: nearest.o3_value, 
+                no2_value: nearest.no2_value 
+            } 
+        };
+    } catch (error) {
+        console.error("Error:", error);
+        return { success: false, message: "Error en consulta" };
+    }
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+
+
 
 // Exportar todas las funciones
 module.exports = {
@@ -1759,7 +1810,9 @@ module.exports = {
 	updateUser,
 	getPrizes,
 	redeemPrize,
-	getRedemptionHistory
-    updateUserActivity,
-    getNodos
+	getRedemptionHistory,
+	getMeasurements,
+	recoverPassword,
+	generateFakeMeasurements,
+	getNearestMeasurement
 };

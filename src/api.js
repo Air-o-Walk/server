@@ -2,7 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const logica = require('./logica');
-
+/*const FileLogger = require('./logger');
+// Activa el logger
+new FileLogger('mi_log.txt');*/
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -25,8 +27,6 @@ app.get('/', (req, res) => {
             'POST /login': 'Iniciar sesión',
             'GET /user/:userId': 'Obtener información de usuario',
             'POST /node/link': 'Vincular nodo a usuario',
-            'PUT /user/activity': 'Actualizar actividad de usuario',
-            'GET /informeNodos': 'Estado de los nodos'
             'PUT /user/activity': 'Actualizar actividad de usuario',
             'GET /getAyuntamientos': 'Lista de ayuntamientos',
             'POST /apply': 'Crear solicitud',
@@ -99,6 +99,38 @@ app.post('/login', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * POST /recover
+ * Recuperación de contraseña: genera una temporal y la envía por email
+ */
+app.post('/recover', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "Falta el email"
+            });
+        }
+
+        const resultado = await logica.recoverPassword(email);
+
+        if (resultado.success) {
+            return res.status(200).json(resultado);
+        } else {
+            return res.status(400).json(resultado);
+        }
+
+    } catch (error) {
+        console.error("Error en /recover:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Error interno del servidor"
         });
     }
 });
@@ -645,33 +677,95 @@ app.get('/redemptions/:userId', async (req, res) => {
     }
 });
 
+
 /**
- * Hecho por Maria Algora
- * GET /informeNodos/todos → Todos los nodos
-GET /informeNodos/inactivos → Nodos inactivos >24h
-GET /informeNodos/erroneos → Nodos con lecturas erróneas
- * Obtener información de los nodos
- * Params: {todos, inactivos, erroneos}
+
+ * GET /measurements
+ * Obtiene las medidas
+ * Params: userId
  */
-app.get('/informeNodos/:tipo', async (req, res) => {
+app.get('/measurements', async (req, res) => {
     try {
-        const { tipo } = req.params;
-        const resultado = await logica.getNodos(tipo);
+        console.log('GET /redemptions - Obteniendo mediciones');
+
+        const resultado = await logica.getMeasurements();
+
+        const statusCode = resultado.success ? 200 : 404;
+        return res.status(statusCode).json(resultado);
+
+    } catch (error) {
+        console.error('Error en GET /measurements', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor'
+        });
+    }
+});
+
+/**
+ * POST /measurements
+ * Vincular un nodo a un usuario
+ * Body: { userId, nodeName }
+ */
+app.post('/measurements/fake', async (req, res) => {
+    try {
+        const { number } = req.body;
+
+        // Validar que todos los campos estén presentes
+        if (!number) {
+            return res.status(400).json({
+                success: false,
+                message: 'Faltan campos obligatorios: number'
+            });
+        }
+
+        const resultado = await logica.generateFakeMeasurements(number);
 
         if (resultado.success) {
-            res.status(200).json(resultado);
+            res.status(201).json(resultado);
         } else {
             res.status(404).json(resultado);
         }
 
     } catch (error) {
-        console.error('Error en /informeNodos', error);
+        console.error('Error en /node/link:', error);
         res.status(500).json({
             success: false,
             message: 'Error interno del servidor'
         });
     }
 });
+
+// GET /measurements/closest/:latitude/:longitude
+// hecho por Maria
+// params: latitude, longitude
+app.get('/measurements/closest/:latitude/:longitude', async (req, res) => {
+    try {
+        const { latitude, longitude } = req.params; 
+        const lat = parseFloat(latitude);
+        const lon = parseFloat(longitude);
+        
+        if (isNaN(lat) || isNaN(lon)) {
+            return res.status(400).json({ success: false, message: "Coordenadas inválidas" });
+        }
+
+        const result = await logica.getNearestMeasurement(lat, lon);
+
+        if (!result.success) {
+            return res.status(404).json({ success: false, message: result.message });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: result.data
+        });
+    } catch (error) {
+        console.error("Error en GET /measurements/closest:", error);
+        return res.status(500).json({ success: false, message: "Error interno" });
+    }
+});
+
+
 
 // Manejador de rutas no encontradas
 app.use((req, res) => {
