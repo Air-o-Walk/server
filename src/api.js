@@ -66,13 +66,28 @@ app.get('/', (req, res) => {
         endpoints: {
             'POST /register': 'Registrar nuevo usuario',
             'POST /login': 'Iniciar sesión',
+            'POST /recover': 'Recuperar contraseña',
             'GET /user/:userId': 'Obtener información de usuario',
             'POST /node/link': 'Vincular nodo a usuario',
-            'PUT /user/activity': 'Actualizar actividad de usuario',
-            'GET /getAyuntamientos': 'Lista de ayuntamientos',
-            'POST /apply': 'Crear solicitud',
-            'DELETE /application/:applicationId': 'Borra solicitud',
-			'GET /informeNodos/': 'Estado nodos'
+            'PUT /user/activity': 'Actualizar actividad del usuario',
+            'GET /node/ofUser/:userId': 'Obtener nodo vinculado de un usuario',
+            'DELETE /node/ofUser/:userId': 'Desvincular nodo del usuario',
+            'GET /usuario/calidad-aire-resumen': 'Resumen de calidad del aire para un usuario',
+            'POST /measurements': 'Insertar nueva medición',
+            'POST /user/daily-stats': 'Añadir estadísticas diarias de usuario',
+            'GET /getAyuntamientos': 'Obtener lista de ayuntamientos',
+            'POST /apply': 'Crear solicitud de registro',
+            'DELETE /application/:applicationId': 'Eliminar solicitud por ID',
+            'GET /points/:userId': 'Obtener puntos totales de un usuario',
+            'PUT /points': 'Añadir puntos a un usuario',
+            'GET /informeNodos/:tipo': 'Obtener informe de nodos (todos/inactivos/erróneos)',
+            'PUT /user/:userId': 'Actualizar perfil de usuario',
+            'GET /prizes': 'Obtener premios activos disponibles',
+            'POST /redeem': 'Canjear puntos por un premio',
+            'GET /redemptions/:userId': 'Historial de canjes de usuario',
+            'GET /measurements': 'Obtener todas las mediciones',
+            'POST /measurements/fake': 'Generar mediciones falsas',
+            'GET /measurements/closest/:latitude/:longitude': 'Obtener medición más cercana'
         }
     });
 });
