@@ -1,3 +1,14 @@
+/**
+ * @file logica.js
+ * @description Logica del Negocio, clase con todas las funciones que comunica la api con la base de datos
+ * @author Maria Algora
+ * @author Santiago Aguirre
+ * @author Christopher Yoris
+ * @author Meryame Ait Boumlik
+ * @version 3.1
+ * @since 2025-08-30
+ */
+
 const jwt = require('jsonwebtoken');
 const db = require('./config/database');
 const bcrypt = require('bcrypt');
@@ -12,10 +23,27 @@ const turf = require('@turf/turf'); // Necesario para test de punto en polígono
 
 
 /**
- * 1. registerUser(email)
- * Hecho por Maria Algora
- * Registra un nuevo usuario en el sistema
- * email ---> registerUser() ---> {success, message} || error "Usuario o email ya existe"
+ * Registra un nuevo usuario en el sistema a partir de una solicitud previa.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Obtiene la solicitud más reciente asociada al email proporcionado.
+ * - Asigna el rol por defecto "walker".
+ * - Genera y cifra la contraseña a partir del DNI.
+ * - Crea automáticamente el nombre de usuario.
+ * - Inserta el usuario en la base de datos.
+ * - Envía un correo con las credenciales de acceso.
+ * - Elimina la solicitud de aplicación asociada.
+ *
+ * @async
+ * @function registerUser
+ * @param {string} email Email del solicitante registrado previamente en applications.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {Promise<Object>} result.success Indica si el registro fue exitoso.
+ * @returns {Promise<Object>} result.message Mensaje descriptivo del resultado.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante el proceso de registro.
+ *
+ * @author Maria Algora
  */
 async function registerUser(email) {
     try {
@@ -168,11 +196,28 @@ async function loginUser(username, password) {
 }
 
 /**
- * 3. getUser(userId)
- * Obtiene la información de un usuario
- * 
- * userId ---> getUser() ---> {success, user: {username, email, points, active_hours, total_distance, town_hall, role}} || error "Usuario no encontrado"
+ * Autentica un usuario mediante nombre de usuario y contraseña.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Busca el usuario en la base de datos por su nombre de usuario.
+ * - Verifica la contraseña cifrada mediante bcrypt.
+ * - Genera un token JWT de sesión con una validez de 24 horas.
+ *
+ * @async
+ * @function loginUser
+ * @param {string} username Nombre de usuario.
+ * @param {string} password Contraseña en texto plano.
+ * @returns {Promise<Object>} Resultado de la autenticación.
+ * @returns {Promise<Object>} result.success Indica si la autenticación fue exitosa.
+ * @returns {Promise<Object>} [result.token] Token JWT generado si la autenticación es correcta.
+ * @returns {Promise<Object>} [result.userId] Identificador del usuario autenticado.
+ * @returns {Promise<Object>} [result.message] Mensaje de error en caso de fallo.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante el proceso de autenticación.
+ *
+ * @author Santiago Aguirres
  */
+
 async function getUser(userId) {
     try {
         // Buscar usuario con información de ayuntamiento y rol
@@ -224,9 +269,29 @@ async function getUser(userId) {
 }
 
 /**
- * 4. linkNodeToUser(userId, nodeName)
- * Vincula un nodo/sensor a un usuario evitando duplicados
+ * Vincula un nodo/sensor a un usuario, evitando duplicados y manejando reactivación.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Verifica que el usuario exista.
+ * - Comprueba si ya existe un nodo con el mismo nombre.
+ * - Inserta un nuevo nodo si no existe.
+ * - Reactiva el nodo si estaba inactivo.
+ * - Devuelve error si el nodo ya está activo con otro usuario o si ya está vinculado al mismo usuario.
+ *
+ * @async
+ * @function linkNodeToUser
+ * @param {number} userId ID del usuario al que se quiere vincular el nodo.
+ * @param {string} nodeName Nombre del nodo/sensor a vincular.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.message] Mensaje descriptivo de la operación o error.
+ * @returns {Promise<Object>} [result.nodeId] ID del nodo vinculado o reactivado, si aplica.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante el proceso de vinculación.
+ *
+ * @author Meryame Ait Boumlik
  */
+
 async function linkNodeToUser(userId, nodeName) {
     try {
         // 1. User exists?
@@ -307,11 +372,29 @@ async function linkNodeToUser(userId, nodeName) {
 
 
 /**
- * 5. updateUserActivity(userId, time, distance)
- * Actualiza las horas activas y distancia recorrida de un usuario
- * 
- * userId, time, distance ---> updateUserActivity() ---> {success, message, active_hours, total_distance} || error "Usuario no encontrado"
+ * Actualiza las horas activas y la distancia total recorrida de un usuario.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Verifica que el usuario exista.
+ * - Calcula los nuevos valores de horas activas y distancia total sumando los proporcionados.
+ * - Actualiza los valores en la base de datos.
+ *
+ * @async
+ * @function updateUserActivity
+ * @param {number} userId ID del usuario cuya actividad se desea actualizar.
+ * @param {number} time Tiempo activo a sumar (en horas o unidades definidas).
+ * @param {number} distance Distancia recorrida a sumar (en unidades definidas, p.ej. metros o km).
+ * @returns {Promise<Object>} Resultado de la actualización.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} result.message Mensaje descriptivo del resultado o error.
+ * @returns {Promise<Object>} [result.active_hours] Nuevas horas activas del usuario, si la actualización fue exitosa.
+ * @returns {Promise<Object>} [result.total_distance] Nueva distancia total del usuario, si la actualización fue exitosa.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la actualización de la actividad.
+ *
+ * @author IDK
  */
+
 async function updateUserActivity(userId, time, distance) {
     try {
         // Verificar que el usuario existe
@@ -360,11 +443,26 @@ async function updateUserActivity(userId, time, distance) {
 
 
 /**
- * getLinkedNodeOfUser(userId)
- * Hecho por Meryame Ait Boumlik
- * Devuelve el nodo vinculado actualmente a un usuario
- * userId ---> getLinkedNodeOfUser() ---> {success, node} || {success:false}
+ * Devuelve el nodo actualmente vinculado a un usuario.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Verifica que el usuario exista.
+ * - Busca un nodo activo vinculado al usuario.
+ * - Devuelve el nodo si existe o un mensaje de error si no hay nodo vinculado.
+ *
+ * @async
+ * @function getLinkedNodeOfUser
+ * @param {number} userId ID del usuario del que se desea obtener el nodo vinculado.
+ * @returns {Promise<Object>} Resultado de la consulta.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.node] Objeto con la información del nodo vinculado si existe.
+ * @returns {Promise<Object>} [result.message] Mensaje descriptivo de error si no hay nodo vinculado o si el usuario no existe.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la consulta.
+ *
+ * @author Meryame Ait Boumlik
  */
+
 async function getLinkedNodeOfUser(userId) {
     try {
         // Verificar usuario
@@ -409,12 +507,27 @@ async function getLinkedNodeOfUser(userId) {
         };
     }
 }
+
 /**
- * unlinkNodeFromUser(userId)
- * Hecho por Meryame Ait Boumlik
- * Elimina la vinculación del nodo activo de un usuario
- * userId ---> unlinkNodeFromUser() ---> {success:true} || {success:false}
+ * Elimina la vinculación del nodo activo de un usuario.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Verifica que el usuario exista.
+ * - Busca el nodo activo vinculado al usuario.
+ * - Desvincula el nodo actualizando su estado a 'inactive' y eliminando la relación con el usuario.
+ *
+ * @async
+ * @function unlinkNodeFromUser
+ * @param {number} userId ID del usuario cuyo nodo se desea desvincular.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.message] Mensaje descriptivo del resultado o error.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la desvinculación del nodo.
+ *
+ * @author Meryame Ait Boumlik
  */
+
 async function unlinkNodeFromUser(userId) {
     try {
 
@@ -459,11 +572,30 @@ async function unlinkNodeFromUser(userId) {
         return { success: false, message: 'Error interno al desvincular nodo' };
     }
 }
+
 /**
- * calidad_del_aire_cara_y_mensaje(userId)
- * Hecho por Meryame Ait Boumlik
- * Calcula el estado general de la calidad del aire y un mensaje resumen usando las mediciones del nodo vinculado en las últimas 8 horas.
- * Diseño: userId → calidad_del_aire_cara_y_mensaje() →  {success, status, summaryText}
+ * Calcula el estado general de la calidad del aire y genera un mensaje resumen
+ * usando las mediciones del nodo vinculado en las últimas 8 horas.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Obtiene el nodo vinculado al usuario mediante `getLinkedNodeOfUser`.
+ * - Consulta las mediciones de los últimos 8 horas (O3, NO2, CO).
+ * - Clasifica la calidad del aire usando `clasificarCalidadDelAire`.
+ * - Devuelve un estado general (`status`) y un mensaje resumen (`summaryText`).
+ * - Si no hay mediciones recientes, asume que la calidad del aire es buena.
+ *
+ * @async
+ * @function calidad_del_aire_cara_y_mensaje
+ * @param {number} userId ID del usuario para el que se calcula la calidad del aire.
+ * @returns {Promise<Object>} Resultado del cálculo de la calidad del aire.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.status] Estado general de la calidad del aire ('buena', 'regular', 'mala', etc.).
+ * @returns {Promise<Object>} [result.summaryText] Mensaje resumen explicativo de la calidad del aire.
+ * @returns {Promise<Object>} [result.message] Mensaje de error si la operación falla o no hay nodo vinculado.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante el cálculo de la calidad del aire.
+ *
+ * @author Meryame Ait Boumlik
  */
 async function calidad_del_aire_cara_y_mensaje(userId) {
     try {
@@ -514,10 +646,24 @@ async function calidad_del_aire_cara_y_mensaje(userId) {
 }
 
 /**
- * get_tiempo(userId)
- * Hecho por Meryame Ait Boumlik
- * Obtiene el tiempo activo acumulado por el usuario en las últimas 8 horas desde la tabla daily_stats.
- * Diseño: userId → get_tiempo() → {success, timeHours}
+ * Obtiene el tiempo activo acumulado por un usuario en las últimas 8 horas.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Consulta la tabla `daily_stats` para sumar las horas activas del usuario
+ *   en las últimas 8 horas.
+ * - Devuelve el total de horas acumuladas.
+ *
+ * @async
+ * @function get_tiempo
+ * @param {number} userId ID del usuario cuyo tiempo activo se desea consultar.
+ * @returns {Promise<Object>} Resultado de la consulta.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.timeHours] Total de horas activas acumuladas en las últimas 8 horas.
+ * @returns {Promise<Object>} [result.message] Mensaje de error si la operación falla.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la consulta.
+ *
+ * @author Meryame Ait Boumlik
  */
 async function get_tiempo(userId) {
     try {
@@ -544,11 +690,26 @@ async function get_tiempo(userId) {
 }
 
 /**
- * get_distancia(userId)
- * Hecho por Meryame Ait Boumlik
- * Obtiene la suma de distancia recorrida por el usuario en las últimas 8 horas desde la tabla daily_stats.
- * Diseño: userId → get_distancia() → {success, distanceKm}
+ * Obtiene la distancia total recorrida por un usuario en las últimas 8 horas.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Consulta la tabla `daily_stats` para sumar la distancia recorrida por el usuario
+ *   en las últimas 8 horas.
+ * - Devuelve la distancia total acumulada en kilómetros.
+ *
+ * @async
+ * @function get_distancia
+ * @param {number} userId ID del usuario cuya distancia se desea consultar.
+ * @returns {Promise<Object>} Resultado de la consulta.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.distanceKm] Distancia total recorrida en las últimas 8 horas.
+ * @returns {Promise<Object>} [result.message] Mensaje de error si la operación falla.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la consulta.
+ *
+ * @author Meryame Ait Boumlik
  */
+
 async function get_distancia(userId) {
     try {
         const [rows] = await db.query(
@@ -574,11 +735,24 @@ async function get_distancia(userId) {
 }
 
 /**
- * get_puntos(userId)
- * Hecho por Meryame Ait Boumlik
- * Obtiene la suma de puntos del usuario en las últimas 8 horas
- * desde la tabla daily_stats.
- * Diseño: userId → get_puntos() → {success, points} 
+ * Obtiene la suma de puntos de un usuario en las últimas 8 horas.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Consulta la tabla `daily_stats` para sumar los puntos obtenidos por el usuario
+ *   en las últimas 8 horas.
+ * - Devuelve el total de puntos acumulados.
+ *
+ * @async
+ * @function get_puntos
+ * @param {number} userId ID del usuario cuyos puntos se desean consultar.
+ * @returns {Promise<Object>} Resultado de la consulta.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.points] Total de puntos obtenidos en las últimas 8 horas.
+ * @returns {Promise<Object>} [result.message] Mensaje de error si la operación falla.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la consulta.
+ *
+ * @author Meryame Ait Boumlik
  */
 async function get_puntos(userId) {
     try {
@@ -606,12 +780,33 @@ async function get_puntos(userId) {
 
 
 /**
- * valores_grafica(userId)
- * Hecho por Meryame Ait Boumlik
  * Obtiene los valores necesarios para dibujar la gráfica de calidad del aire
- * Ahora también calcula el índice normalizado (0–1) por instante.
- * Diseño: userId → valores_grafica() → {success, graph:{timestamps, index, o3, no2, co}}
+ * y calcula el índice normalizado (0–1) por instante.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Obtiene el nodo vinculado al usuario mediante `getLinkedNodeOfUser`.
+ * - Consulta las mediciones de O3, NO2 y CO de las últimas 8 horas.
+ * - Calcula el índice normalizado por cada instante.
+ * - Devuelve un objeto con los arrays de timestamps, valores de contaminantes e índice normalizado.
+ *
+ * @async
+ * @function valores_grafica
+ * @param {number} userId ID del usuario cuyos datos de calidad del aire se desean consultar.
+ * @returns {Promise<Object>} Resultado de la consulta.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.graph] Objeto con los datos para la gráfica.
+ * @returns {Array<string>} result.graph.timestamps Array de etiquetas de tiempo (hh:mm).
+ * @returns {Array<number>} result.graph.index Array del índice normalizado (0–1+) por instante.
+ * @returns {Array<number>} result.graph.o3 Array de valores de O3.
+ * @returns {Array<number>} result.graph.no2 Array de valores de NO2.
+ * @returns {Array<number>} result.graph.co Array de valores de CO.
+ * @returns {Promise<Object>} [result.message] Mensaje de error si la operación falla o no hay nodo vinculado.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la obtención de datos para la gráfica.
+ *
+ * @author Meryame Ait Boumlik
  */
+
 async function valores_grafica(userId) {
     try {
         const nodoRes = await getLinkedNodeOfUser(userId);
@@ -683,11 +878,31 @@ async function valores_grafica(userId) {
 
 
 /**
- * getAirQualitySummary(userId)
- * Hecho por Meryame Ait Boumlik
- * Obtiene el resumen completo de calidad del aire para un usuario.
- * Combina: estado del aire, tiempo activo, distancia, puntos y datos de gráfica.
- * Diseño: userId → getAirQualitySummary() → {success, status, summaryText, timeHours, distanceKm, points, graph}
+ * Obtiene un resumen completo de la calidad del aire para un usuario.
+ *
+ * Combina múltiples métricas:
+ * - Estado general de la calidad del aire y mensaje resumen.
+ * - Tiempo activo acumulado en las últimas 8 horas.
+ * - Distancia recorrida en las últimas 8 horas.
+ * - Puntos obtenidos en las últimas 8 horas.
+ * - Datos necesarios para dibujar la gráfica de calidad del aire.
+ *
+ * @async
+ * @function getAirQualitySummary
+ * @param {number} userId ID del usuario para el que se genera el resumen.
+ * @returns {Promise<Object>} Resultado del resumen completo.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.status] Estado general de la calidad del aire ('buena', 'regular', 'mala', etc.).
+ * @returns {Promise<Object>} [result.summaryText] Mensaje resumen de la calidad del aire.
+ * @returns {Promise<Object>} [result.timeHours] Tiempo activo acumulado en las últimas 8 horas.
+ * @returns {Promise<Object>} [result.distanceKm] Distancia total recorrida en las últimas 8 horas.
+ * @returns {Promise<Object>} [result.points] Puntos obtenidos en las últimas 8 horas.
+ * @returns {Promise<Object>} [result.graph] Datos para la gráfica de calidad del aire (timestamps, valores de contaminantes e índice normalizado).
+ * @returns {Promise<Object>} [result.message] Mensaje de error si alguna de las consultas falla.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la generación del resumen.
+ *
+ * @author Meryame Ait Boumlik
  */
 async function getAirQualitySummary(userId) {
     try {
@@ -732,10 +947,23 @@ async function getAirQualitySummary(userId) {
 }
 
 /**
- * clasificarCalidadDelAire(measurements)
- * Hecho por Meryame Ait Boumlik
- * Clasifica la calidad del aire según umbrales de O₃, NO₂ y CO.
- * Diseño: measurements[] → clasificarCalidadDelAire() → {status, summaryText}
+ * Clasifica la calidad del aire según los valores de O₃, NO₂ y CO.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Recorre las mediciones proporcionadas.
+ * - Calcula un índice normalizado por medición basado en O₃, NO₂ y CO.
+ * - Determina el estado general de la calidad del aire y genera un mensaje resumen.
+ *
+ * @function clasificarCalidadDelAire
+ * @param {Array<Object>} measurements Array de objetos de medición.
+ * @param {number} measurements[].o3_value Valor de O₃ de la medición.
+ * @param {number} measurements[].no2_value Valor de NO₂ de la medición.
+ * @param {number} measurements[].co_value Valor de CO de la medición.
+ * @returns {Object} Resultado de la clasificación.
+ * @returns {string} result.status Estado general de la calidad del aire ('buena', 'regular', 'picos', 'mala').
+ * @returns {string} result.summaryText Mensaje descriptivo del estado de la calidad del aire.
+ *
+ * @author Meryame Ait Boumlik
  */
 function clasificarCalidadDelAire(measurements) {
     let maxIndex = 0;
@@ -777,10 +1005,27 @@ function clasificarCalidadDelAire(measurements) {
 }
 
 /**
- * insertMeasurement(nodeId, co, o3, no2, latitude, longitude)
- * Hecho por Meryame Ait Boumlik
- * Inserta una medición de un nodo en la tabla measurements.
- * Diseño: (nodeId, co, o3, no2, lat, lon) → insertMeasurement() → guarda fila o error.
+ * Inserta una medición de un nodo en la tabla `measurements`.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Verifica que el nodo exista en la base de datos.
+ * - Inserta una nueva fila en la tabla `measurements` con los valores proporcionados.
+ *
+ * @async
+ * @function insertMeasurement
+ * @param {number} nodeId ID del nodo que realiza la medición.
+ * @param {number} co Valor de CO de la medición.
+ * @param {number} o3 Valor de O₃ de la medición.
+ * @param {number} no2 Valor de NO₂ de la medición.
+ * @param {number} latitude Latitud donde se realizó la medición.
+ * @param {number} longitude Longitud donde se realizó la medición.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {Promise<Object>} result.success Indica si la inserción fue exitosa.
+ * @returns {Promise<Object>} [result.message] Mensaje descriptivo del resultado o error.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la inserción.
+ *
+ * @author Meryame Ait Boumlik
  */
 async function insertMeasurement(nodeId, co, o3, no2, latitude, longitude) {
     try {
@@ -810,11 +1055,27 @@ async function insertMeasurement(nodeId, co, o3, no2, latitude, longitude) {
         return { success: false, message: "Error al insertar medición" };
     }
 }
+
 /**
- * addDailyStats(userId, activeHours, distance, points)
- * Hecho por Meryame Ait Boumlik
- * Registra una nueva entrada en daily_stats.
- * Diseño: (userId, hours, distance, points) → addDailyStats() → inserta fila o error.
+ * Registra una nueva entrada en la tabla `daily_stats` de un usuario.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Inserta una nueva fila en la tabla `daily_stats` con las horas activas,
+ *   distancia recorrida y puntos obtenidos.
+ *
+ * @async
+ * @function addDailyStats
+ * @param {number} userId ID del usuario al que se le añaden las estadísticas.
+ * @param {number} activeHours Horas activas del usuario.
+ * @param {number} distance Distancia recorrida por el usuario (en km o la unidad usada en la tabla).
+ * @param {number} points Puntos obtenidos por el usuario.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {Promise<Object>} result.success Indica si la inserción fue exitosa.
+ * @returns {Promise<Object>} [result.message] Mensaje descriptivo del resultado o error.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la inserción.
+ *
+ * @author Meryame Ait Boumlik
  */
 async function addDailyStats(userId, activeHours, distance, points) {
     try {
@@ -838,52 +1099,87 @@ async function addDailyStats(userId, activeHours, distance, points) {
     }
 }
 
-/*
-*. getAyuntamientos
-*Hecho por Maria Algora
-*Devuelve id y nombre del ayuntamiento
-* ---> getAyuntamientos() ---> { success: true, data: [ {id, name}, ... ] } || { success: false, message }
-*/
-async function getAyuntamientos() {
-    try {
-        console.log('🔍 Iniciando getAyuntamientos...');
-        
-        const [ayt] = await db.query(
-            `SELECT id, name FROM town_halls ORDER BY name ASC`
-        );
+/**
+ * Devuelve la lista de ayuntamientos (id y nombre) ordenados alfabéticamente.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Consulta la tabla `town_halls` para obtener todos los registros.
+ * - Devuelve un array de objetos con `id` y `name`.
+ *
+ * @async
+ * @function getAyuntamientos
+ * @returns {Promise<Object>} Resultado de la consulta.
+ * @returns {Promise<Object>} result.success Indica si la operación fue exitosa.
+ * @returns {Promise<Object>} [result.data] Array de objetos con los ayuntamientos.
+ * @returns {Array<{id: string, name: string}>} result.data Lista de ayuntamientos con id y nombre.
+ * @returns {Promise<Object>} [result.message] Mensaje de error si la operación falla.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la consulta.
+ *
+ * @author Maria Algora
+ */
 
-        console.log('📊 Resultado de la consulta:', ayt);
-        console.log('📋 Tipo de resultado:', typeof ayt);
-        console.log('🔢 Es array?', Array.isArray(ayt));
-        console.log('📏 Longitud del resultado:', ayt ? ayt.length : 'null');
+	async function getAyuntamientos() {
+		try {
+			console.log('🔍 Iniciando getAyuntamientos...');
 
-        //Creo un array de objetos
-        const data = Array.isArray(ayt)
-            ? ayt.map(r => ({ id: String(r.id), name: r.name }))
-            : [];
+			const [ayt] = await db.query(
+				`SELECT id, name FROM town_halls ORDER BY name ASC`
+			);
 
-        console.log('✅ Datos procesados:', data);
+			console.log('📊 Resultado de la consulta:', ayt);
+			console.log('📋 Tipo de resultado:', typeof ayt);
+			console.log('🔢 Es array?', Array.isArray(ayt));
+			console.log('📏 Longitud del resultado:', ayt ? ayt.length : 'null');
 
-        return {
-            success: true,
-            data
-        };
+			//Creo un array de objetos
+			const data = Array.isArray(ayt)
+				? ayt.map(r => ({ id: String(r.id), name: r.name }))
+				: [];
 
-    } catch (error) {
-        console.error('❌ Error en getAyuntamientos:', error);
-        console.error('🔍 Stack trace:', error.stack);
-        return {
-            success: false,
-            message: 'Error al obtener los ayuntamientos: ' + error.message
-        };
-    }
-}
-/* . apply
-*Hecho por Maria Algora
-*Guarda solicitud en applications
-* firstName, lastName, email, dni, phone, townHallId -> apply ->
-*/
+			console.log('✅ Datos procesados:', data);
 
+			return {
+				success: true,
+				data
+			};
+
+		} catch (error) {
+			console.error('❌ Error en getAyuntamientos:', error);
+			console.error('🔍 Stack trace:', error.stack);
+			return {
+				success: false,
+				message: 'Error al obtener los ayuntamientos: ' + error.message
+			};
+		}
+	}
+
+/**
+ * Guarda una nueva solicitud en la tabla `applications`.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Valida que todos los campos obligatorios estén presentes.
+ * - Verifica que el email no esté registrado en la tabla `users`.
+ * - Inserta la solicitud en la tabla `applications`.
+ * - Si la inserción es exitosa, llama a `registerUser` para crear el usuario automáticamente.
+ *
+ * @async
+ * @function apply
+ * @param {Object} params Objeto con los datos de la solicitud.
+ * @param {string} params.firstName Nombre del solicitante.
+ * @param {string} params.lastName Apellido del solicitante.
+ * @param {string} params.email Email del solicitante.
+ * @param {string} params.dni DNI del solicitante.
+ * @param {string} params.phone Teléfono del solicitante.
+ * @param {number} params.townHallId ID del ayuntamiento asociado.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success Indica si la operación fue exitosa.
+ * @returns {string} result.message Mensaje descriptivo del resultado o error.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la inserción de la solicitud.
+ *
+ * @author Maria Algora
+ */
 async function apply({ firstName, lastName, email, dni, phone, townHallId }) {
     try {
         // Validaciones básicas
@@ -925,10 +1221,18 @@ async function apply({ firstName, lastName, email, dni, phone, townHallId }) {
         };
     }
 }
-/* . deleteApplication
- * Hecho por Maria Algora
- * Elimina una solicitud de applications por id.
- * applicationId -> deleteapplication ->
+
+/**
+ * Elimina una solicitud de la tabla `applications` por su ID.
+ *
+ * @async
+ * @function deleteApplication
+ * @param {number} applicationId ID de la solicitud a eliminar.
+ * @returns {Promise<boolean>} `true` si la eliminación fue exitosa, `false` en caso contrario.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la eliminación.
+ *
+ * @author Maria Algora
  */
 async function deleteApplication(applicationId) {
     try {
@@ -943,10 +1247,21 @@ async function deleteApplication(applicationId) {
     }
 }
 
-/* . sendMail
- * Hecho por Maria Algora
- * Envía correo de bienvenida usando la función `bienvenida` de config/correo.js
- * to, firstName, username, rawPassword -> sendEmail ->
+/**
+ * Envía un correo de bienvenida a un usuario utilizando la función `bienvenida` de `config/correo.js`.
+ *
+ * @async
+ * @function sendMail
+ * @param {Object} params Objeto con los datos del correo.
+ * @param {string} params.to Email del destinatario.
+ * @param {string} params.firstName Nombre del destinatario.
+ * @param {string} params.username Nombre de usuario del destinatario.
+ * @param {string} params.rawPassword Contraseña en texto plano del usuario.
+ * @returns {Promise<void>} No devuelve ningún valor; captura errores internamente y los registra en consola.
+ *
+ * @throws {Error} Si ocurre un error inesperado al enviar el correo.
+ *
+ * @author Maria Algora
  */
 async function sendMail({ to, firstName, username, rawPassword }) {
     try {
@@ -962,10 +1277,23 @@ async function sendMail({ to, firstName, username, rawPassword }) {
 }
 
 /**
- * getPoints(userId)
- * Obtiene los puntos totales de un usuario
- * 
- * userId ---> getPoints() ---> {success: true, points: number} || {success: false, message: string}
+ * Obtiene los puntos totales de un usuario.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Verifica que el usuario exista en la tabla `users`.
+ * - Devuelve los puntos acumulados del usuario.
+ *
+ * @async
+ * @function getPoints
+ * @param {number} userId ID del usuario.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success Indica si la operación fue exitosa.
+ * @returns {number} [result.points] Puntos del usuario, disponible si `success` es true.
+ * @returns {string} [result.message] Mensaje descriptivo en caso de error.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la consulta.
+ *
+ * @author Santiago Aguirre
  */
 async function getPoints(userId) {
     try {
@@ -997,10 +1325,25 @@ async function getPoints(userId) {
 }
 
 /**
- * addPoints(userId, points)
- * Suma puntos al total del usuario
- * 
- * userId, points ---> addPoints() ---> {success: true, message: string, totalPoints: number} || {success: false, message: string}
+ * Suma puntos al total de un usuario.
+ *
+ * El proceso realiza las siguientes acciones:
+ * - Verifica que el usuario exista en la tabla `users`.
+ * - Calcula el nuevo total de puntos sumando `pointsToAdd`.
+ * - Actualiza la tabla `users` con el nuevo total de puntos.
+ *
+ * @async
+ * @function addPoints
+ * @param {number} userId ID del usuario al que se le añadirán puntos.
+ * @param {number} pointsToAdd Cantidad de puntos a añadir.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success Indica si la operación fue exitosa.
+ * @returns {number} [result.totalPoints] Total de puntos del usuario tras la suma, disponible si `success` es true.
+ * @returns {string} result.message Mensaje descriptivo del resultado o error.
+ *
+ * @throws {Error} Si ocurre un error inesperado durante la actualización de puntos.
+ *
+ * @author Santiago Aguirre
  */
 async function addPoints(userId, pointsToAdd) {
     try {
@@ -1041,10 +1384,32 @@ async function addPoints(userId, pointsToAdd) {
     }
 }
 
-//Hecho por Maria ALgora
-//Muestra estados de los nodos
 /**
- * Servicio para la gestión y consulta de nodos
+ * Servicio para la gestión y consulta de nodos.
+ *
+ * Obtiene los nodos registrados en el sistema y permite filtrar por tipo:
+ * - `"todos"`: devuelve todos los nodos.
+ * - `"inactivos"`: nodos que no han actualizado su estado en más de un mes.
+ * - `"erroneos"`: nodos con mediciones fuera de los rangos esperados o con poca variabilidad.
+ *
+ * @async
+ * @function getNodos
+ * @param {string} [tipo='todos'] Tipo de consulta: 'todos', 'inactivos' o 'erroneos'.
+ * @returns {Promise<Object>} Resultado de la consulta.
+ * @returns {boolean} result.success Indica si la operación fue exitosa.
+ * @returns {Array<Object>} [result.nodos] Lista de nodos según el filtro aplicado.
+ * @returns {string} [result.message] Mensaje descriptivo en caso de error o filtro inválido.
+ * @returns {string} [result.error] Stack trace del error si ocurre algún fallo.
+ *
+ * Cada nodo devuelto tiene la siguiente estructura:
+ * @typedef {Object} Nodo
+ * @property {number} id ID del nodo.
+ * @property {string} name Nombre del nodo.
+ * @property {string|null} username Nombre de usuario vinculado, si lo hay.
+ * @property {string} status Estado actual del nodo ('active' o 'inactive').
+ * @property {Date} lastStatusUpdate Última actualización de estado.
+ *
+ * @author Maria Algora
  */
 async function getNodos(tipo = 'todos') {
     try {
@@ -1165,10 +1530,29 @@ HAVING COUNT(m.node_id) >= 4`;
     }
 }
 
+/**
+ * Actualiza el perfil de un usuario.
+ *
+ * Permite modificar el nombre de usuario, el email y/o la contraseña. 
+ * La contraseña actual es requerida si se desea establecer una nueva.
+ *
+ * @async
+ * @function updateUser
+ * @param {number} userId - ID del usuario a actualizar.
+ * @param {Object} updateData - Objeto con los campos a actualizar.
+ * @param {string} [updateData.username] - Nuevo nombre de usuario.
+ * @param {string} [updateData.email] - Nuevo email.
+ * @param {string} [updateData.current_password] - Contraseña actual, necesaria si se cambia la contraseña.
+ * @param {string} [updateData.new_password] - Nueva contraseña a establecer.
+ *
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success Indica si la actualización fue exitosa.
+ * @returns {string} result.message Mensaje descriptivo sobre la operación o el error ocurrido.
+ *
+ *
+ * @author Maria Algora
+ */
 
-
-//Hecho por Maria ALgora
-//Actualiza el perfil
 async function updateUser(userId, updateData) {
     try {
         const { username, email, current_password, new_password } = updateData;
@@ -1307,11 +1691,26 @@ async function updateUser(userId, updateData) {
 }
 
 /**
- * AUTOR: SANTIAGO AGUIRRE
- * getPrizes()
- * Obtiene todas las recompensas activas disponibles
- * 
- * ---> getPrizes() ---> {success: true, prizes: [...]} || {success: false, message: string}
+ * Obtiene todas las recompensas activas disponibles.
+ *
+ * Solo devuelve premios con `active > 0` y `quantity_available > 0`, ordenados por `points_required`.
+ *
+ * @async
+ * @function getPrizes
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success Indica si la consulta fue exitosa.
+ * @returns {Array<Object>} [result.prizes] Lista de premios (solo si success=true). Cada premio contiene:
+ *   @property {number} id - ID del premio.
+ *   @property {string} name - Nombre del premio.
+ *   @property {string} description - Descripción del premio.
+ *   @property {number} points_required - Puntos necesarios para canjearlo.
+ *   @property {number} quantity_available - Cantidad disponible actualmente.
+ *   @property {number} initial_quantity - Cantidad inicial del premio.
+ *   @property {number} active - Indicador de si el premio está activo.
+ * @returns {string} [result.message] Mensaje de error en caso de fallo.
+ *
+ *
+ * @author Santiago Aguirre
  */
 async function getPrizes() {
     try {
@@ -1339,12 +1738,26 @@ async function getPrizes() {
 }
 
 /**
- * AUTOR: SANTIAGO AGUIRRE
- * redeemPrize(userId, prizeId)
- * Canjea puntos del usuario por un premio
- * Valida puntos suficientes, stock disponible y actualiza todo
- * 
- * userId, prizeId ---> redeemPrize() ---> {success: true, couponCode, remainingPoints} || {success: false, message}
+ * Canjea puntos del usuario por un premio.
+ *
+ * Valida que el usuario exista, que tenga suficientes puntos, que el premio esté activo y tenga stock.
+ * Actualiza los puntos del usuario, reduce el stock del premio y genera un cupón único.
+ *
+ * @async
+ * @function redeemPrize
+ * @param {number} userId - ID del usuario que quiere canjear el premio.
+ * @param {number} prizeId - ID del premio que se desea canjear.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success Indica si el canje fue exitoso.
+ * @returns {string} [result.message] Mensaje informativo del resultado.
+ * @returns {string} [result.couponCode] Código de cupón generado (solo si success=true).
+ * @returns {string} [result.prizeName] Nombre del premio canjeado (solo si success=true).
+ * @returns {number} [result.pointsSpent] Puntos utilizados para el canje (solo si success=true).
+ * @returns {number} [result.remainingPoints] Puntos restantes del usuario (solo si success=true).
+ * @returns {number} [result.pointsNeeded] Puntos necesarios (solo si success=false por puntos insuficientes).
+ * @returns {number} [result.currentPoints] Puntos actuales del usuario (solo si success=false por puntos insuficientes).
+ *
+ * @author Santiago Aguirre
  */
 async function redeemPrize(userId, prizeId) {
     try {
@@ -1461,11 +1874,26 @@ async function redeemPrize(userId, prizeId) {
 }
 
 /**
- * AUTOR: SANTIAGO AGUIRRE
- * getRedemptionHistory(userId)
- * Obtiene el historial de premios canjeados por un usuario
- * 
- * userId ---> getRedemptionHistory() ---> {success: true, redemptions: [...]}
+ * Obtiene el historial de premios canjeados por un usuario.
+ *
+ * Valida que el usuario exista y devuelve todos los canjes realizados junto con la información del premio.
+ *
+ * @async
+ * @function getRedemptionHistory
+ * @param {number} userId - ID del usuario.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success - Indica si la consulta fue exitosa.
+ * @returns {Array<Object>} [result.redemptions] - Lista de canjes realizados por el usuario.
+ * @returns {number} result.redemptions[].id - ID del registro de canje.
+ * @returns {string} result.redemptions[].coupon_code - Código de cupón generado.
+ * @returns {Date|string} result.redemptions[].redemption_date - Fecha del canje.
+ * @returns {string} result.redemptions[].prize_name - Nombre del premio canjeado.
+ * @returns {string} result.redemptions[].description - Descripción del premio.
+ * @returns {number} result.redemptions[].points_required - Puntos requeridos para canjear el premio.
+ * @returns {string} result.redemptions[].image_url - URL de la imagen del premio.
+ * @returns {string} [result.message] - Mensaje de error en caso de fallo.
+ *
+ * @author Santiago Aguirre
  */
 async function getRedemptionHistory(userId) {
     try {
@@ -1508,9 +1936,20 @@ async function getRedemptionHistory(userId) {
 }
 
 /**
- * AUTOR: SANTIAGO AGUIRRE
- * Función auxiliar para generar códigos de cupón únicos
- * Formato: XXX-YYYY-ZZZZ (ejemplo: ABC-1234-XY9Z)
+ * Genera un código de cupón único en formato XXX-YYYY-ZZZZ.
+ *
+ * El código está compuesto por tres bloques separados por guiones:
+ * - Bloque 1: 4 caracteres alfabéticos y/o numéricos
+ * - Bloque 2: 4 caracteres alfabéticos y/o numéricos
+ * - Bloque 3: 4 caracteres alfabéticos y/o numéricos
+ *
+ * Ejemplo de salida: "AB12-3F4G-ZX9Q"
+ *
+ * @function generateCouponCode
+ * @name generateCouponCode
+ * @returns {string} Código de cupón único generado aleatoriamente.
+ * 
+ * @author Santiago Aguirre
  */
 function generateCouponCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -1528,6 +1967,326 @@ function generateCouponCode() {
     
     return code;
 }
+
+/**
+ * Obtiene todas las mediciones registradas en la base de datos.
+ *
+ * Devuelve todas las filas de la tabla `measurements` con todos sus campos.
+ *
+ * @async
+ * @function getMeasurements
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success - Indica si la consulta fue exitosa.
+ * @returns {Array<Object>} [result.measurements] - Lista de mediciones.
+ * @returns {number} result.measurements[].id - ID de la medición.
+ * @returns {number} result.measurements[].node_id - ID del nodo al que pertenece la medición.
+ * @returns {Date|string} result.measurements[].timestamp - Fecha y hora de la medición.
+ * @returns {number} result.measurements[].co_value - Valor de CO medido.
+ * @returns {number} result.measurements[].o3_value - Valor de O₃ medido.
+ * @returns {number} result.measurements[].no2_value - Valor de NO₂ medido.
+ * @returns {number} result.measurements[].latitude - Latitud donde se realizó la medición.
+ * @returns {number} result.measurements[].longitude - Longitud donde se realizó la medición.
+ * @returns {string} [result.message] - Mensaje de error en caso de fallo.
+ *
+ * @author Santiago Aguirre
+ */
+async function getMeasurements() {
+    try {
+        // Obtener todas las medidas disponibles
+        const [measurements] = await db.query(
+            `SELECT * FROM measurements`
+        );
+
+        return {
+            success: true,
+            measurements: measurements
+        };
+
+    } catch (error) {
+        console.error('Error en getMeasurements:', error);
+        return {
+            success: false,
+            message: 'Error al obtener medidas'
+        };
+    }
+}
+
+/**
+ * Recupera la contraseña de un usuario de forma temporal.
+ *
+ * Flujo:
+ * 1. Busca al usuario por email.
+ * 2. Genera una contraseña temporal fija (modo testing).
+ * 3. Hashea la contraseña temporal y actualiza la base de datos.
+ * 4. Intenta enviar un correo con la contraseña temporal.
+ * 5. Siempre devuelve success al frontend por motivos de seguridad,
+ *    aunque el correo no exista.
+ *
+ * @async
+ * @function recoverPassword
+ * @param {string} email - Correo electrónico del usuario.
+ * @returns {Promise<{success: boolean, message: string}>} Resultado de la operación.
+ * @returns {boolean} result.success - Indica si la operación fue exitosa.
+ * @returns {string} result.message - Mensaje informativo o de error.
+ *
+ * @author Christopher Yoris
+ */
+async function recoverPassword(email) {
+    try {
+        // 1. Buscar usuario por email
+        const [users] = await db.query(
+            "SELECT id, username FROM users WHERE email = ?",
+            [email]
+        );
+
+        // Seguridad: siempre devolvemos success aunque el correo no exista
+        if (users.length === 0) {
+            return { success: true, message: "Si el correo existe, se enviará una contraseña temporal." };
+        }
+
+        const user = users[0];
+
+        // 2. Contraseña temporal fija (modo testing)
+        const tempPassword = generarPasswordTemporal(); // → "Password1234."
+
+        // 3. Hashear la contraseña temporal
+        const hashed = await bcrypt.hash(tempPassword, 10);
+
+        // 4. Actualizar la contraseña del usuario en la base de datos
+        await db.query(
+            "UPDATE users SET password = ? WHERE id = ?",
+            [hashed, user.id]
+        );
+
+        // 5. Enviar email (placeholder, no funcionará hasta configurar SMTP)
+        try {
+            await enviarCorreoRecuperacion(email, user.username, tempPassword);
+        } catch (emailError) {
+            console.warn("⚠ SMTP no configurado aún — contraseña temporal generada igualmente.");
+        }
+
+        return {
+            success: true,
+            message: "Si el correo existe, se enviará una contraseña temporal."
+        };
+
+    } catch (error) {
+        console.error("Error en recoverPassword:", error);
+        return { success: false, message: "Error interno en recuperación" };
+    }
+}
+
+
+// Contraseña temporal FIJA para testing
+function generarPasswordTemporal() {
+    return "Password1234."; 
+}
+
+
+/**
+ * Envía un correo electrónico de recuperación de contraseña a un usuario.
+ *
+ * Este servicio utiliza Nodemailer para enviar un email con la contraseña temporal generada.
+ * Se debe configurar correctamente el usuario y contraseña SMTP para que funcione.
+ *
+ * @async
+ * @function enviarCorreoRecuperacion
+ * @param {string} to - Correo electrónico del destinatario.
+ * @param {string} username - Nombre de usuario del destinatario.
+ * @param {string} tempPassword - Contraseña temporal a incluir en el correo.
+ * @returns {Promise<void>} Promesa que se resuelve cuando el correo es enviado.
+ *
+ * @author Christopher Yoris
+ */
+async function enviarCorreoRecuperacion(to, username, tempPassword) {
+
+    const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+            user: "PENDIENTE_DE_CONFIGURAR",
+            pass: "PENDIENTE_DE_CONFIGURAR"
+        }
+    });
+
+    const html = `
+        <h2>Recuperación de contraseña</h2>
+        <p>Hola <strong>${username}</strong>,</p>
+        <p>Tu nueva contraseña temporal es:</p>
+        <h3>${tempPassword}</h3>
+        <p>Inicia sesión y cámbiala cuando quieras.</p>
+    `;
+
+    return transporter.sendMail({
+        from: "Air-o-Walk <PENDIENTE_DE_CONFIGURAR>",
+        to,
+        subject: "Tu contraseña temporal",
+        html
+    });
+}
+
+
+
+async function generateFakeMeasurements(count) {
+    try {
+        const insertedMeasurements = [];
+
+        // Definimos el polígono de Gandía
+        const polygonCoords = [
+            /*[38.9724930637672, -0.18638220396700872],
+            [38.9682187335428, -0.17812575220471538],
+            [38.96532307289798, -0.18112093279103245],
+            [38.962657122009325, -0.1844708058210799],
+            [38.9651392174368, -0.1891409229276754],
+			[38.9724930637672, -0.18638220396700872]*/
+			
+			
+			/*[39.023155258881275, -0.17927570751465835],
+            [38.95718024141943, -0.12495451134952293],
+            [38.952280521097805, -0.18181862524944353],
+            [38.99636580750054, -0.23080682309674352],
+            [39.023155258881275, -0.17927570751465835]*/
+			
+			
+			[38.97619486753026, -0.18349714625501487],
+            [38.97333777022671, -0.17411600294874113],
+            [38.96897671527094, -0.17846807974031142],
+            [38.97160841849363, -0.18649524360031886],
+            [38.97619486753026, -0.18349714625501487]
+        ];
+        const polygon = turf.polygon([polygonCoords.map(c => [c[1], c[0]])]); // [lng, lat]
+
+        // Bounding box del polígono
+        const bbox = turf.bbox(polygon); // [minX, minY, maxX, maxY]
+
+        // Fecha actual y hace 3 días
+        const now = new Date();
+        const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+        for (let i = 0; i < count; i++) {
+            // Valores aleatorios de gases			
+            const co_value = parseFloat(( 2 * 0.5).toFixed(2));
+            const o3_value = parseFloat(( 100 * 0.5).toFixed(1));
+            const no2_value = parseFloat(( 100 * 0.5).toFixed(1));
+
+            // Coordenadas aleatorias dentro del polígono
+            let lat, lng;
+            let point;
+            do {
+                lng = bbox[0] + Math.random() * (bbox[2] - bbox[0]);
+                lat = bbox[1] + Math.random() * (bbox[3] - bbox[1]);
+                point = turf.point([lng, lat]);
+            } while (!turf.booleanPointInPolygon(point, polygon));
+
+            // Node_id fijo
+            const nodeId = 153;
+
+            // Timestamp aleatorio últimos 3 días
+            const randomTime = new Date(threeDaysAgo.getTime() + Math.random() * (now.getTime() - threeDaysAgo.getTime()));
+            const timestamp = randomTime.toISOString().slice(0, 19).replace('T', ' ');
+
+            // Insertamos usando insertMeasurement
+			let result = await db.query(
+				`INSERT INTO measurements 
+				 (node_id, timestamp, co_value, o3_value, no2_value, latitude, longitude)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [nodeId, timestamp, co_value, o3_value, no2_value, lat, lng]
+        );
+            insertedMeasurements.push({
+                nodeId, co_value, o3_value, no2_value, latitude: lat, longitude: lng, timestamp, success: result.success
+            });
+        }
+
+        return {
+            success: true,
+            measurements: insertedMeasurements
+        };
+
+    } catch (error) {
+        console.error('Error en generateFakeMeasurements:', error);
+        return {
+            success: false,
+            message: 'Error al generar e insertar mediciones fake' + error
+        };
+    }
+}
+
+
+/**
+ * Obtiene la medición más cercana a unas coordenadas específicas.
+ *
+ * Consulta todas las mediciones en la base de datos, calcula la distancia
+ * a cada una desde la ubicación objetivo y devuelve la medición más cercana.
+ *
+ * @async
+ * @function getNearestMeasurement
+ * @param {number} latTarget - Latitud de referencia.
+ * @param {number} lonTarget - Longitud de referencia.
+ * @returns {Promise<Object>} Resultado de la operación.
+ * @returns {boolean} result.success - Indica si la operación fue exitosa.
+ * @returns {Object} [result.data] - Valores de la medición más cercana.
+ * @returns {number} result.data.o3_value - Valor de O₃ de la medición más cercana.
+ * @returns {number} result.data.no2_value - Valor de NO₂ de la medición más cercana.
+ * @returns {string} [result.message] - Mensaje de error en caso de fallo.
+ * 
+ * @author Maria Algora
+ */
+async function getNearestMeasurement(latTarget, lonTarget) {
+    try {
+        const [rows] = await db.query(
+            `SELECT id, node_id, timestamp, co_value, o3_value, no2_value, 
+                    latitude, longitude FROM measurements`
+        );
+
+        if (rows.length === 0) {
+            return { success: false, message: "No hay mediciones" };
+        }
+
+        const measurementsWithDistance = rows.map(row => {
+            const distance = calculateDistance(latTarget, lonTarget, row.latitude, row.longitude);
+            return { o3_value: row.o3_value, no2_value: row.no2_value, distance_km: distance };
+        });
+
+        const nearest = measurementsWithDistance.sort((a, b) => a.distance_km - b.distance_km)[0];
+
+        return { 
+            success: true, 
+            data: { 
+                o3_value: nearest.o3_value, 
+                no2_value: nearest.no2_value 
+            } 
+        };
+    } catch (error) {
+        console.error("Error:", error);
+        return { success: false, message: "Error en consulta" };
+    }
+}
+
+/**
+ * Calcula la distancia en kilómetros entre dos coordenadas geográficas
+ * usando la fórmula del haversine.
+ *
+ * @function calculateDistance
+ * @param {number} lat1 - Latitud del primer punto en grados.
+ * @param {number} lon1 - Longitud del primer punto en grados.
+ * @param {number} lat2 - Latitud del segundo punto en grados.
+ * @param {number} lon2 - Longitud del segundo punto en grados.
+ * @returns {number} Distancia entre los dos puntos en kilómetros.
+ * 
+ * @author Maria Algora
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+
+
 
 // Exportar todas las funciones
 module.exports = {

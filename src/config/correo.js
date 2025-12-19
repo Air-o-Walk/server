@@ -1,9 +1,13 @@
 // correo.js
 //Hecho por Maria Algora
+
+const FileLogger = require('../logger');
+new FileLogger('mi_log.txt');
+
 const nodemailer = require('nodemailer');
 
 const configuracionCorreo = nodemailer.createTransport({
-  host: 'api.sagucre.upv.edu.es',
+  host: 'mail.sagucre.upv.edu.es',
   port: Number(process.env.SMTP_PORT || 587),
   secure: Number(process.env.SMTP_PORT) === 465, // true si 465
   auth: {
