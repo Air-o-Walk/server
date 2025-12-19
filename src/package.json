@@ -9,7 +9,8 @@
     "test": "jest --verbose --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
     "test:api": "jest tests/api.test.js --verbose --forceExit",
-    "test:logica": "jest tests/logica.test.js --verbose --forceExit"
+    "test:logica": "jest tests/logica.test.js --verbose --forceExit",
+	"docs": "jsdoc -c jsdoc.json"
   },
   "jest": {
     "testEnvironment": "node",
@@ -22,6 +23,7 @@
     ]
   },
   "dependencies": {
+    "@turf/turf": "^7.3.1",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
+    "jsdoc": "^4.0.5",
     "nodemon": "^3.0.1",
     "supertest": "^6.3.3"
   }
